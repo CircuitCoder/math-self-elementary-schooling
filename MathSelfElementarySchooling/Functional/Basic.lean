@@ -38,15 +38,17 @@ def IsOpen { X : Type u } [ Metric X ] (M : Set X) : Prop :=
 def IsClosed { X : Type u } [ Metric X ] (M : Set X) : Prop :=
   IsOpen Mᶜ
 
-lemma positive_ball_contains { X : Type u } [ Metric X ] (x : X) (r : ℝ)
+lemma self_distance_zero { X : Type u } [ Metric X ] { x : X } : Metric.dist x x = 0 := by {
+  rw [Metric.dist_strict]
+}
+
+lemma ball_contains_center { X : Type u } [ Metric X ] { x : X } { r : ℝ }
   : r > 0 -> x ∈ open_ball x r := by {
-    intros rpos
+    intros Hrgtz
     unfold open_ball
-    refine Set.mem_setOf.mpr ?_
-    have heq : Metric.dist x x = 0
-    · rw [Metric.dist_strict]
-    rw [heq]
-    exact rpos
+    apply Set.mem_setOf.mpr
+    rw [self_distance_zero]
+    assumption
   }
 
 lemma all_internal_open { X : Type u } [ Metric X ] (M : Set X)
@@ -61,8 +63,39 @@ lemma all_internal_open { X : Type u } [ Metric X ] (M : Set X)
       intros h3
       rcases h3 with ⟨r, rpos, inside⟩
       apply Set.mem_of_subset_of_mem inside
-      exact positive_ball_contains x r rpos
+      exact ball_contains_center rpos
     exact h2
+  }
+
+lemma in_ball_dist { X : Type u } [ Metric X ] { x y : X } { r : ℝ }
+  : Metric.dist x y < r <-> y ∈ open_ball x r := by {
+    unfold open_ball
+    rw [Set.mem_setOf]
+  }
+
+lemma ball_open { X : Type u } [ Metric X ] { x : X }
+  : ∀ r > 0, IsOpen (open_ball x r) := by {
+    intros r _
+    apply all_internal_open
+    intros y Hy
+    unfold IsInternalPt
+
+    rw [← in_ball_dist] at Hy
+
+    let s := r - Metric.dist x y
+    have Hs : s > 0
+    · exact sub_pos.mpr Hy
+    constructor
+    constructor
+    · exact Hs
+    · rw [Set.subset_def]
+      intros z Hz
+      rw [← in_ball_dist]
+      rw [← in_ball_dist] at Hz
+      apply lt_of_le_of_lt Metric.dist_trig
+      have Htmp : Metric.dist x y + Metric.dist y z  < r
+      · exact lt_tsub_iff_left.mp Hz
+      exact Htmp
   }
 
 theorem open_pt_to_ball { X : Type u } [ Metric X ] ( M : Set X ) (x : X) :
@@ -245,19 +278,6 @@ def closure { X : Type u } [ Metric X ] ( M : Set X ) : Set X
 
 def closure' { X : Type u } [ Metric X ] ( M : Set X ) : Set X
   := { x | ∀ r > 0, Set.Nonempty (M ∩ (open_ball x r))}
-
-lemma self_distance_zero { X : Type u } [ Metric X ] { x : X } : Metric.dist x x = 0 := by {
-  rw [Metric.dist_strict]
-}
-
-lemma ball_contains_center { X : Type u } [ Metric X ] { x : X } { r : ℝ }
-  : r > 0 -> x ∈ open_ball x r := by {
-    intros Hrgtz
-    unfold open_ball
-    apply Set.mem_setOf.mpr
-    rw [self_distance_zero]
-    assumption
-  }
 
 theorem closure_def_equiv { X : Type u } [ Metric X ] : ∀ M : Set X, closure M = closure' M
   := by {
@@ -485,3 +505,72 @@ def ContinousAt { X Y : Type u} [ Metric X ] [ Metric Y ] (f : X -> Y) (x₀ : X
 
 def Continous { X Y : Type u } [ Metric X ] [ Metric Y ] (f : X -> Y)
   := ∀ x : X, ContinousAt f x
+
+theorem continous_invopen { X Y : Type u } [ Metric X ] [ Metric Y ] (f : X -> Y)
+  : Continous f -> ∀ My : Set Y, IsOpen My -> IsOpen (f ⁻¹' My) := by {
+    intros Hc My HMyo
+    unfold IsOpen
+    unfold IsOpen at HMyo
+    apply all_internal_open
+    unfold Set.preimage
+    intros x Hx
+    rw [Set.mem_setOf] at Hx
+    unfold IsInternalPt
+    rw [← HMyo] at Hx
+    unfold internal at Hx
+    rw [Set.mem_setOf] at Hx
+    unfold IsInternalPt at Hx
+    rcases Hx with ⟨ r, Hrgtz, Hx ⟩
+    let Hcx : ContinousAt f x := Hc x
+    unfold ContinousAt at Hcx
+
+    rcases Hcx r Hrgtz with ⟨ d, Hdgtz, Hcx' ⟩
+
+    constructor
+    constructor
+    · exact Hdgtz
+    · unfold open_ball
+      rw [Set.setOf_subset_setOf]
+      intros x' Hx'
+      rw [Metric.dist_sym] at Hx'
+      let Hx'' := Hcx' x' Hx'
+      have Hx''' : f x' ∈ open_ball (f x) r
+      · unfold open_ball
+        rw [Set.mem_setOf]
+        rw [Metric.dist_sym] at Hx''
+        exact Hx''
+      exact Hx Hx'''
+  }
+
+theorem invopen_continous { X Y : Type u } [ Metric X ] [ Metric Y ] (f : X -> Y)
+  : (∀ My : Set Y, IsOpen My -> IsOpen (f ⁻¹' My)) -> Continous f := by {
+    intros H x ε Hε
+
+    let Hy := H (open_ball (f x) ε) (ball_open ε Hε)
+    unfold IsOpen at Hy
+
+    have Hxin : x ∈ f ⁻¹' open_ball (f x) ε
+    · unfold Set.preimage
+      rw [Set.mem_setOf]
+      apply ball_contains_center
+      exact Hε
+
+    rw [← Hy] at Hxin
+    unfold internal at Hxin
+    rw [Set.mem_setOf] at Hxin
+    rcases Hxin with ⟨ d, Hd, Hx ⟩
+    constructor
+    constructor
+    · exact Hd
+    · intros x' Hx'
+      rw [Set.subset_def] at Hx
+      rw [Metric.dist_sym, in_ball_dist] at Hx'
+      rw [Metric.dist_sym, in_ball_dist]
+      let Hx'' := Hx x' Hx'
+      unfold Set.preimage at Hx''
+      rw [Set.mem_setOf] at Hx''
+      exact Hx''
+  }
+
+theorem continous_iff_invopen { X Y : Type u } [ Metric X ] [ Metric Y ] (f : X -> Y)
+  : Continous f <-> ∀ My : Set Y, IsOpen My -> IsOpen (f ⁻¹' My) := ⟨ continous_invopen f,  invopen_continous f ⟩
