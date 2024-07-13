@@ -70,67 +70,6 @@ instance {G: Type u} [G_structure: Group G] {H: Subgroup G} : Group (subgroup_ca
 structure NormalSubgroup (G: Type u) [Group G] extends Subgroup G where
   conj_mem: ∀ { h g : G }, pred h -> pred (g ⬝ h ⬝ (g⁻¹))
 
-@[ext]
-structure QuotientGroup {G: Type u} [Group G] (N: NormalSubgroup G) where
-  classes: G -> Prop
-  cong: ∀ { g n: G }, N.pred n -> classes g -> classes (g ⬝ n)
-  cong_inv: ∀ { g h: G }, classes g -> classes h -> N.pred (g⁻¹ ⬝ h)
-  inh: ∃ g, classes g
-
-def quotient_proj {G: Type u} [Group G] (N: NormalSubgroup G) (g: G) : QuotientGroup N := {
-  classes := fun h => ∃ n, N.pred n ∧ g ⬝ n = h
-  cong := by {
-    simp
-    intros h n Hn
-    intros n₁ Hn₁ Heq₁
-    let Carrier := (subgroup_carrier N.toSubgroup)
-    let nc : Carrier := ⟨ n, Hn ⟩
-    let n₁c : Carrier := ⟨ n₁, Hn₁ ⟩
-    let n₂c : Carrier := n₁c ⬝ nc
-    constructor
-    constructor
-    · exact n₂c.snd
-    · rw [← Heq₁]
-      have Heq₂ : n₂c.fst = n₁ ⬝ n := by {
-        dsimp [n₂c]
-        simp [Group.mul]
-      }
-      rw [Heq₂]
-      rw [← @Group.assoc G]
-  }
-  inh := by {
-    simp
-    exact ⟨ g, Group.id, N.id_mem, Group.id_abs_r ⟩
-  }
-  cong_inv := sorry
-}
-
-def quotient_mul {G: Type u} [Group G] {N: NormalSubgroup G} (A B : QuotientGroup N) : QuotientGroup N := {
-  classes := fun h => ∃ a, A.classes a ∧ ∃ b, B.classes b ∧ a ⬝ b = h
-  cong := by {
-    simp
-    intros h n Hn a Ha b Hb Heq
-    constructor
-    constructor
-    · exact Ha
-
-    let b' := b ⬝ n
-    have Hb' : B.classes b' := QuotientGroup.cong _ Hn Hb
-    have Heq' : a ⬝ b' = h ⬝ n := by {
-      dsimp [b']
-      rw [← Group.assoc, Heq]
-    }
-    exact ⟨ b', ⟨ Hb', Heq' ⟩ ⟩
-  }
-  inh := by {
-    simp
-    rcases A.inh with ⟨ a, Ha ⟩
-    rcases B.inh with ⟨ b, Hb ⟩
-    exact ⟨ a ⬝ b, a, Ha, b, Hb, rfl ⟩
-  }
-  cong_inv := sorry
-}
-
 lemma normal_comm_l {G: Type u} [Group G] {N: NormalSubgroup G} ( g n: G )
   : N.pred n -> ∃ n', N.pred n' ∧ n ⬝ g = g ⬝ n' := by {
     intros Hn
@@ -161,6 +100,88 @@ lemma normal_comm_r {G: Type u} [Group G] {N: NormalSubgroup G} ( g n: G )
     exact ⟨ n' , ⟨ H1, H2 ⟩ ⟩
   }
 
+@[ext]
+structure QuotientGroup {G: Type u} [Group G] (N: NormalSubgroup G) where
+  classes: G -> Prop
+  cong: ∀ { g n: G }, N.pred n -> classes g -> classes (g ⬝ n)
+  cong_inv: ∀ { g h: G }, classes g -> classes h -> N.pred (g⁻¹ ⬝ h)
+  inh: ∃ g, classes g
+
+def QuotientGroup.cong_symm {G: Type u} [Group G] {N: NormalSubgroup G} (self : QuotientGroup N) : ∀ { g n: G }, N.pred n -> self.classes g -> self.classes (n ⬝ g) := by {
+  intros g n Hn Hg
+  rcases (normal_comm_l g n Hn) with ⟨ n', Hn', Heq ⟩
+  rw [Heq]
+  exact self.cong Hn' Hg
+}
+
+def QuotientGroup.cong_inv_symm {G: Type u} [Group G] {N: NormalSubgroup G} (self : QuotientGroup N) : ∀ { g h: G }, self.classes g -> self.classes h -> N.pred (g ⬝ (h⁻¹)) := by {
+  intros g h Hg Hh
+  let Htmp := self.cong_inv Hg Hh
+  let n := g⁻¹ ⬝ h
+  let Heq1 : h = g ⬝ n := sorry
+  let Heq2 := calc
+    g ⬝ (h⁻¹) = g ⬝ (n⁻¹ ⬝ (g⁻¹)) := sorry
+    _ = g ⬝ (n⁻¹ ) ⬝ (g⁻¹) := by rw [@Group.assoc]
+  rw [Heq2]
+  apply N.conj_mem
+  apply N.inv_mem
+  exact Htmp
+}
+
+def quotient_proj {G: Type u} [Group G] (N: NormalSubgroup G) (g: G) : QuotientGroup N := {
+  classes := fun h => ∃ n, N.pred n ∧ g ⬝ n = h
+  cong := by {
+    simp
+    intros h n Hn
+    intros n₁ Hn₁ Heq₁
+    let Carrier := (subgroup_carrier N.toSubgroup)
+    let nc : Carrier := ⟨ n, Hn ⟩
+    let n₁c : Carrier := ⟨ n₁, Hn₁ ⟩
+    let n₂c : Carrier := n₁c ⬝ nc
+    constructor
+    constructor
+    · exact n₂c.snd
+    · rw [← Heq₁]
+      have Heq₂ : n₂c.fst = n₁ ⬝ n := by {
+        dsimp [n₂c]
+        simp [Group.mul]
+      }
+      rw [Heq₂]
+      rw [← @Group.assoc G]
+  }
+  cong_inv := sorry
+  inh := by {
+    simp
+    exact ⟨ g, Group.id, N.id_mem, Group.id_abs_r ⟩
+  }
+}
+
+def quotient_mul {G: Type u} [Group G] {N: NormalSubgroup G} (A B : QuotientGroup N) : QuotientGroup N := {
+  classes := fun h => ∃ a, A.classes a ∧ ∃ b, B.classes b ∧ a ⬝ b = h
+  cong := by {
+    simp
+    intros h n Hn a Ha b Hb Heq
+    constructor
+    constructor
+    · exact Ha
+
+    let b' := b ⬝ n
+    have Hb' : B.classes b' := QuotientGroup.cong _ Hn Hb
+    have Heq' : a ⬝ b' = h ⬝ n := by {
+      dsimp [b']
+      rw [← Group.assoc, Heq]
+    }
+    exact ⟨ b', ⟨ Hb', Heq' ⟩ ⟩
+  }
+  cong_inv := sorry
+  inh := by {
+    simp
+    rcases A.inh with ⟨ a, Ha ⟩
+    rcases B.inh with ⟨ b, Hb ⟩
+    exact ⟨ a ⬝ b, a, Ha, b, Hb, rfl ⟩
+  }
+}
+
 def quotient_inv {G: Type u} [Group G] {N: NormalSubgroup G} (A : QuotientGroup N) : QuotientGroup N := {
   classes := fun h => ∃ a, A.classes a ∧ a ⬝ h = Group.id
   cong := by {
@@ -189,12 +210,12 @@ def quotient_inv {G: Type u} [Group G] {N: NormalSubgroup G} (A : QuotientGroup 
         _ = n⁻¹ ⬝ (a ⬝ h) ⬝ n := by rw [← @Group.assoc]
         _ = Group.id := by rw [Heq, Group.id_abs_r, Group.inv_l]
   }
+  cong_inv := sorry
   inh := by {
     simp
     rcases A.inh with ⟨ a, Ha ⟩
     exact ⟨ a⁻¹, a, Ha, Group.inv_r ⟩
   }
-  cong_inv := sorry
 }
 
 instance {G: Type u} [Group G] {N: NormalSubgroup G} : Group (QuotientGroup N) where
@@ -263,8 +284,23 @@ instance {G: Type u} [Group G] {N: NormalSubgroup G} : Group (QuotientGroup N) w
       let Htmp : a⁻¹⬝ (a ⬝ g) = g := by rw [← @Group.assoc, @Group.inv_l, @Group.id_abs_l]
       exact ⟨ a⁻¹, ⟨ a, Ha, Group.inv_r ⟩, a ⬝ g, QuotientGroup.cong _ Hn Ha, Htmp ⟩
   }
-  inv_r := sorry -- TODO
 
+  inv_r := by {
+    intros A
+    ext g
+    simp [quotient_mul, quotient_inv, quotient_proj]
+    constructor
+    · rintro ⟨ a, Ha, h, ⟨ b, Hb, Hinv ⟩, Heq ⟩
+      rw [inv_uniq_r b h Hinv] at Heq
+      have Htmp : Group.id ⬝ (a ⬝ (b⁻¹)) = g := by rw [Heq, Group.id_abs_l]
+      exact ⟨ a ⬝ (b⁻¹), QuotientGroup.cong_inv_symm _ Ha Hb, Htmp ⟩
+    · rintro ⟨ n, Hn, Heq ⟩
+      rw [@Group.id_abs_l] at Heq
+      rw [Heq] at Hn
+      rcases A.inh with ⟨ a, Ha ⟩
+      let Htmp : g ⬝ a ⬝ (a⁻¹) = g := by rw [@Group.assoc, @Group.inv_r, @Group.id_abs_r]
+      exact ⟨ g ⬝ a, QuotientGroup.cong_symm _ Hn Ha, a⁻¹, ⟨ a, Ha, Group.inv_r ⟩, Htmp ⟩
+  }
 namespace Hom
 
 open Group
