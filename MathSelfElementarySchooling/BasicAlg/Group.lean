@@ -19,6 +19,33 @@ class Group (G: Type u) where
 infixl:100 "⬝" => Group.mul
 postfix:100 "⁻¹" => Group.inv
 
+lemma double_inv {G: Type u} [Group G] { g: G } : (g⁻¹)⁻¹ = g := calc
+  g⁻¹⁻¹ = g⁻¹⁻¹ ⬝ Group.id := by rw [Group.id_abs_r]
+  _ = g⁻¹⁻¹ ⬝ ((g⁻¹) ⬝ g) := by rw [Group.inv_l]
+  _ = g⁻¹⁻¹ ⬝ (g⁻¹) ⬝ g := by rw [Group.assoc]
+  _ = Group.id ⬝ g := by rw [Group.inv_l]
+  _ = g := Group.id_abs_l
+
+lemma inv_uniq_l {G: Type u} [Group G] ( g h : G )
+  : g ⬝ h = Group.id -> g = h⁻¹ := by {
+    intros Heq
+    exact calc
+      g = g ⬝ Group.id := by rw [@Group.id_abs_r]
+      _ = g ⬝ (h ⬝ (h⁻¹)) := by rw [@Group.inv_r]
+      _ = g ⬝ h ⬝ (h⁻¹) := by rw [@Group.assoc]
+      _ = h⁻¹ := by rw [Heq, Group.id_abs_l]
+  }
+
+lemma inv_uniq_r {G: Type u} [Group G] ( g h : G )
+  : g ⬝ h = Group.id -> h = g⁻¹ := by {
+    intros Heq
+    exact calc
+      h =  Group.id ⬝ h := by rw [@Group.id_abs_l]
+      _ = g⁻¹ ⬝ g ⬝ h := by rw [@Group.inv_l]
+      _ = g⁻¹ ⬝ (g ⬝ h) := by rw [@Group.assoc]
+      _ = g⁻¹ := by rw [Heq, Group.id_abs_r]
+  }
+
 structure Subgroup (G: Type u) [Group G] where
   pred: G -> Prop
   id_mem: pred Group.id
@@ -38,12 +65,6 @@ instance {G: Type u} [G_structure: Group G] {H: Subgroup G} : Group (subgroup_ca
   inv_r {g} := by simp [G_structure.inv_r]
   assoc { a b c } := by simp [G_structure.assoc]
 
-lemma double_inv {G: Type u} [Group G] { g: G } : (g⁻¹)⁻¹ = g := calc
-  g⁻¹⁻¹ = g⁻¹⁻¹ ⬝ Group.id := by rw [Group.id_abs_r]
-  _ = g⁻¹⁻¹ ⬝ ((g⁻¹) ⬝ g) := by rw [Group.inv_l]
-  _ = g⁻¹⁻¹ ⬝ (g⁻¹) ⬝ g := by rw [Group.assoc]
-  _ = Group.id ⬝ g := by rw [Group.inv_l]
-  _ = g := Group.id_abs_l
 
 /- Normal subgroup and quotient groups -/
 structure NormalSubgroup (G: Type u) [Group G] extends Subgroup G where
@@ -53,6 +74,8 @@ structure NormalSubgroup (G: Type u) [Group G] extends Subgroup G where
 structure QuotientGroup {G: Type u} [Group G] (N: NormalSubgroup G) where
   classes: G -> Prop
   cong: ∀ { g n: G }, N.pred n -> classes g -> classes (g ⬝ n)
+  cong_inv: ∀ { g h: G }, classes g -> classes h -> N.pred (g⁻¹ ⬝ h)
+  inh: ∃ g, classes g
 
 def quotient_proj {G: Type u} [Group G] (N: NormalSubgroup G) (g: G) : QuotientGroup N := {
   classes := fun h => ∃ n, N.pred n ∧ g ⬝ n = h
@@ -75,6 +98,11 @@ def quotient_proj {G: Type u} [Group G] (N: NormalSubgroup G) (g: G) : QuotientG
       rw [Heq₂]
       rw [← @Group.assoc G]
   }
+  inh := by {
+    simp
+    exact ⟨ g, Group.id, N.id_mem, Group.id_abs_r ⟩
+  }
+  cong_inv := sorry
 }
 
 def quotient_mul {G: Type u} [Group G] {N: NormalSubgroup G} (A B : QuotientGroup N) : QuotientGroup N := {
@@ -94,6 +122,13 @@ def quotient_mul {G: Type u} [Group G] {N: NormalSubgroup G} (A B : QuotientGrou
     }
     exact ⟨ b', ⟨ Hb', Heq' ⟩ ⟩
   }
+  inh := by {
+    simp
+    rcases A.inh with ⟨ a, Ha ⟩
+    rcases B.inh with ⟨ b, Hb ⟩
+    exact ⟨ a ⬝ b, a, Ha, b, Hb, rfl ⟩
+  }
+  cong_inv := sorry
 }
 
 lemma normal_comm_l {G: Type u} [Group G] {N: NormalSubgroup G} ( g n: G )
@@ -154,6 +189,12 @@ def quotient_inv {G: Type u} [Group G] {N: NormalSubgroup G} (A : QuotientGroup 
         _ = n⁻¹ ⬝ (a ⬝ h) ⬝ n := by rw [← @Group.assoc]
         _ = Group.id := by rw [Heq, Group.id_abs_r, Group.inv_l]
   }
+  inh := by {
+    simp
+    rcases A.inh with ⟨ a, Ha ⟩
+    exact ⟨ a⁻¹, a, Ha, Group.inv_r ⟩
+  }
+  cong_inv := sorry
 }
 
 instance {G: Type u} [Group G] {N: NormalSubgroup G} : Group (QuotientGroup N) where
@@ -162,11 +203,20 @@ instance {G: Type u} [Group G] {N: NormalSubgroup G} : Group (QuotientGroup N) w
   inv := quotient_inv
 
   assoc := by {
-    intros a b c
+    intros A B C
     ext g
     unfold quotient_mul
     simp
-    sorry -- TODO
+    constructor
+    · intros h
+      rcases h with ⟨ h, ⟨ a, Ha, b, Hb, Heq1 ⟩, ⟨ c, Hc, Heq2 ⟩⟩
+      rw [← Heq1] at Heq2
+      rw [← Heq2]
+      exact ⟨ a, Ha, b ⬝ c, ⟨ b, Hb, c, Hc, rfl ⟩, Eq.symm Group.assoc ⟩
+    · intros h
+      rcases h with ⟨ a, Ha, h, ⟨ b, Hb, c, Hc, Heq1⟩, Heq2 ⟩
+      rw [← Heq2, ← Heq1]
+      exact ⟨ a ⬝ b, ⟨ a, Ha, b, Hb, rfl ⟩, ⟨ c, Hc, Group.assoc ⟩⟩
   }
 
   id_abs_l := by {
@@ -177,12 +227,11 @@ instance {G: Type u} [Group G] {N: NormalSubgroup G} : Group (QuotientGroup N) w
     · intros Ha
       rcases Ha with ⟨ a, ⟨ n, Hn, Ha ⟩ , b, Hb, Heq ⟩
       rw [@Group.id_abs_l] at Ha
-      rcases (normal_comm_l b n _) with ⟨ n', ⟨ Hl, Hr ⟩ ⟩
-      rw [← Ha, Hr] at Heq
-      rw [← Heq]
+      rcases (normal_comm_l b n Hn) with ⟨ n', ⟨ Hl, Hr ⟩ ⟩
+      rw [← Heq, ← Ha, Hr]
       exact A.cong Hl Hb
     · intros Hg
-      exact ⟨ Group.id, ⟨ Group.id, _ ⟩, ⟨ g, _ ⟩ ⟩
+      exact ⟨ Group.id, ⟨ Group.id, ⟨ N.id_mem , Group.id_abs_l ⟩ ⟩, ⟨ g, ⟨ Hg, Group.id_abs_l ⟩  ⟩ ⟩
   }
 
   id_abs_r := by {
@@ -192,15 +241,28 @@ instance {G: Type u} [Group G] {N: NormalSubgroup G} : Group (QuotientGroup N) w
     constructor
     · intros Ha
       rcases Ha with ⟨ a, Ha, b, ⟨ n, Hn, Hb ⟩ , Heq ⟩
-      rw [@Group.id_abs_l] at Hb
-      rw [← Hb] at Heq
-      rw [← Heq]
-      exact A.cong _ Ha
+      rw [← Heq, ← Hb, Group.id_abs_l]
+      exact A.cong Hn Ha
     · intros Hg
-      exact ⟨ _, _, _ ⟩
+      exact ⟨ g, Hg, Group.id, ⟨ Group.id, N.id_mem, Group.id_abs_l ⟩, Group.id_abs_r ⟩
   }
 
-  inv_l := sorry -- TODO
+  inv_l := by {
+    intros A
+    ext g
+    simp [quotient_mul, quotient_inv, quotient_proj]
+    constructor
+    · rintro ⟨ h, ⟨ a, Ha, Hinv ⟩, b, Hb, Heq ⟩
+      rw [inv_uniq_r a h Hinv] at Heq
+      have Htmp : Group.id ⬝ (a⁻¹ ⬝ b) = g := by rw [Heq, Group.id_abs_l]
+      exact ⟨ a⁻¹ ⬝ b, QuotientGroup.cong_inv _ Ha Hb, Htmp ⟩
+    · rintro ⟨ n, Hn, Heq ⟩
+      rw [@Group.id_abs_l] at Heq
+      rw [Heq] at Hn
+      rcases A.inh with ⟨ a, Ha ⟩
+      let Htmp : a⁻¹⬝ (a ⬝ g) = g := by rw [← @Group.assoc, @Group.inv_l, @Group.id_abs_l]
+      exact ⟨ a⁻¹, ⟨ a, Ha, Group.inv_r ⟩, a ⬝ g, QuotientGroup.cong _ Hn Ha, Htmp ⟩
+  }
   inv_r := sorry -- TODO
 
 namespace Hom
