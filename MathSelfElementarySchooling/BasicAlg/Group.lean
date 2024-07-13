@@ -46,6 +46,23 @@ lemma inv_uniq_r {G: Type u} [Group G] ( g h : G )
       _ = g⁻¹ := by rw [Heq, Group.id_abs_r]
   }
 
+lemma inv_dist {G: Type u} [Group G] ( g h : G )
+  : (g ⬝ h)⁻¹ = h⁻¹ ⬝ (g⁻¹) := by {
+    exact calc
+      (g ⬝ h)⁻¹ = (g ⬝ h)⁻¹ ⬝ Group.id := by rw [@Group.id_abs_r]
+      _ = (g ⬝ h)⁻¹ ⬝ (g ⬝ (g⁻¹)) := by rw [@Group.inv_r]
+      _ = (g ⬝ h)⁻¹ ⬝ (g ⬝ Group.id ⬝ (g⁻¹)) := by rw [@Group.id_abs_r]
+      _ = (g ⬝ h)⁻¹ ⬝ (g ⬝ (h ⬝ (h⁻¹)) ⬝ (g⁻¹)) := by rw [@Group.inv_r]
+      _ = (g ⬝ h)⁻¹ ⬝ ((g ⬝ h ⬝ (h⁻¹)) ⬝ (g⁻¹)) := by {
+        have Htmp : g ⬝ (h ⬝ (h⁻¹)) = g ⬝ h ⬝ (h⁻¹) := Eq.symm Group.assoc
+        rw [Htmp]
+      }
+      _ = (g ⬝ h)⁻¹ ⬝ (g ⬝ h ⬝ (h⁻¹)) ⬝ (g⁻¹) := by rw [← @Group.assoc]
+      _ = ((g ⬝ h)⁻¹ ⬝ (g ⬝ h)) ⬝ (h⁻¹) ⬝ (g⁻¹) := by rw [← @Group.assoc]
+      _ = Group.id ⬝ (h⁻¹) ⬝ (g⁻¹) := by rw [@Group.inv_l]
+      _ = _ := by rw [@Group.id_abs_l]
+  }
+
 structure Subgroup (G: Type u) [Group G] where
   pred: G -> Prop
   id_mem: pred Group.id
@@ -69,6 +86,14 @@ instance {G: Type u} [G_structure: Group G] {H: Subgroup G} : Group (subgroup_ca
 /- Normal subgroup and quotient groups -/
 structure NormalSubgroup (G: Type u) [Group G] extends Subgroup G where
   conj_mem: ∀ { h g : G }, pred h -> pred (g ⬝ h ⬝ (g⁻¹))
+
+def NormalSubgroup.conj_mem_symm {G: Type u} [Group G] (self: NormalSubgroup G) :
+  ∀ { h g : G }, self.pred h -> self.pred (g⁻¹ ⬝ h ⬝ g) := by {
+    intros h g Hh
+    let Htmp : self.pred (g⁻¹ ⬝ h ⬝ (g⁻¹⁻¹)):= self.conj_mem Hh
+    rw [double_inv] at Htmp
+    exact Htmp
+  }
 
 lemma normal_comm_l {G: Type u} [Group G] {N: NormalSubgroup G} ( g n: G )
   : N.pred n -> ∃ n', N.pred n' ∧ n ⬝ g = g ⬝ n' := by {
@@ -118,10 +143,13 @@ def QuotientGroup.cong_inv_symm {G: Type u} [Group G] {N: NormalSubgroup G} (sel
   intros g h Hg Hh
   let Htmp := self.cong_inv Hg Hh
   let n := g⁻¹ ⬝ h
-  let Heq1 : h = g ⬝ n := sorry
+  let Heq1 : h = g ⬝ n := calc
+    h = g ⬝ ((g⁻¹) ⬝ h) := by rw [← Group.assoc, Group.inv_r, Group.id_abs_l]
+    _ = g ⬝ n := rfl
   let Heq2 := calc
-    g ⬝ (h⁻¹) = g ⬝ (n⁻¹ ⬝ (g⁻¹)) := sorry
-    _ = g ⬝ (n⁻¹ ) ⬝ (g⁻¹) := by rw [@Group.assoc]
+    g ⬝ (h⁻¹) = g ⬝ ((g ⬝ n)⁻¹) := by rw [Heq1]
+    _ = g ⬝ (n⁻¹ ⬝ (g⁻¹)) := by rw [inv_dist]
+    _ = g ⬝ (n⁻¹ ) ⬝ (g⁻¹) := by rw [Group.assoc]
   rw [Heq2]
   apply N.conj_mem
   apply N.inv_mem
@@ -149,7 +177,17 @@ def quotient_proj {G: Type u} [Group G] (N: NormalSubgroup G) (g: G) : QuotientG
       rw [Heq₂]
       rw [← @Group.assoc G]
   }
-  cong_inv := sorry
+  cong_inv := by {
+    simp
+    intros a b n Hn Heq n' Hn' Heq'
+    rw [← Heq, inv_dist, ← Heq']
+    let Htmp := calc n⁻¹ ⬝ (g⁻¹) ⬝ (g ⬝ n')
+        = n⁻¹ ⬝ (g⁻¹ ⬝ (g ⬝ n')) := by rw [@Group.assoc]
+      _ = n⁻¹ ⬝ ((g⁻¹ ⬝ g) ⬝ n') := by rw [@Group.assoc]
+      _ = n⁻¹ ⬝ n' := by rw [Group.inv_l, Group.id_abs_l]
+    rw [Htmp]
+    exact N.mul_mem (N.inv_mem Hn) Hn'
+  }
   inh := by {
     simp
     exact ⟨ g, Group.id, N.id_mem, Group.id_abs_r ⟩
@@ -173,7 +211,21 @@ def quotient_mul {G: Type u} [Group G] {N: NormalSubgroup G} (A B : QuotientGrou
     }
     exact ⟨ b', ⟨ Hb', Heq' ⟩ ⟩
   }
-  cong_inv := sorry
+  cong_inv := by {
+    simp
+    intros ab ab' a Ha b Hb Heq a' Ha' b' Hb' Heq'
+    rw [← Heq, ← Heq', inv_dist]
+    let Htmp := calc b⁻¹ ⬝ (a⁻¹) ⬝ (a' ⬝ b')
+        = b⁻¹ ⬝ (a⁻¹ ⬝ (a' ⬝ b')) := by rw [@Group.assoc]
+      _ = b⁻¹ ⬝ ((a⁻¹ ⬝ a') ⬝ b') := by rw [@Group.assoc]
+      _ = b⁻¹ ⬝ (a⁻¹ ⬝ a') ⬝ b' := by rw [← @Group.assoc]
+    rw [Htmp]
+    let Hn := A.cong_inv Ha Ha'
+    rcases (normal_comm_r (b⁻¹) (a⁻¹ ⬝ a') Hn) with ⟨ n₁, Hn₁, Heq₁ ⟩
+    rw [Heq₁, Group.assoc]
+    apply N.mul_mem Hn₁
+    exact B.cong_inv Hb Hb'
+  }
   inh := by {
     simp
     rcases A.inh with ⟨ a, Ha ⟩
@@ -210,7 +262,12 @@ def quotient_inv {G: Type u} [Group G] {N: NormalSubgroup G} (A : QuotientGroup 
         _ = n⁻¹ ⬝ (a ⬝ h) ⬝ n := by rw [← @Group.assoc]
         _ = Group.id := by rw [Heq, Group.id_abs_r, Group.inv_l]
   }
-  cong_inv := sorry
+  cong_inv := by {
+    simp
+    intros ai bi a Ha Hainv b Hb Hbinv
+    rw [inv_uniq_r _ _ Hainv, inv_uniq_r _ _ Hbinv, double_inv]
+    exact A.cong_inv_symm Ha Hb
+  }
   inh := by {
     simp
     rcases A.inh with ⟨ a, Ha ⟩
