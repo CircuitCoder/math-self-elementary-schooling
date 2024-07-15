@@ -60,10 +60,10 @@ inductive LogicFlavor : Type
 | I
 | C
 
-def LogicFlavor.RSeqCond (l: LogicFlavor) : Multiset Proposition -> Prop := match l with
-| M => fun k => Multiset.card k <= 1
-| I => fun k => Multiset.card k <= 1
-| C => fun _ => True
+def LogicFlavor.RSeq (l: LogicFlavor) : Type := match l with
+| M => Option Proposition
+| I => Option Proposition
+| C => Multiset Proposition
 
 def LogicFlavor.bot_constructor (l : LogicFlavor) : Prop := match l with
 | M => False
@@ -73,42 +73,79 @@ def LogicFlavor.bot_constructor (l : LogicFlavor) : Prop := match l with
 structure Sequent {l: LogicFlavor} where
   mk ::
   left : Multiset Proposition
-  right : Multiset Proposition
-  -- { cond : l.RSeqCond right } -- FIXME: figure out how to do this
+  right : l.RSeq
 
-infix:10 "=>" => Sequent.mk
+infix:10 "⇒" => Sequent.mk
+
+def r_empty {logic : LogicFlavor} : logic.RSeq := match logic with
+| LogicFlavor.M => none
+| LogicFlavor.I => none
+| LogicFlavor.C => (0 : Multiset Proposition)
+
+def r_singleton {logic : LogicFlavor} (p : Proposition) : logic.RSeq := match logic with
+| LogicFlavor.M => some p
+| LogicFlavor.I => some p
+| LogicFlavor.C => ([p] : Multiset Proposition)
+
+def LogicFlavor.RSeq.r_spacious {logic : LogicFlavor} (seq : logic.RSeq) : Prop := match logic with
+| LogicFlavor.M => seq = none
+| LogicFlavor.I => seq = none
+| LogicFlavor.C => True
+
+def r_concat {logic : LogicFlavor} (p : Proposition) (seq : logic.RSeq) : logic.RSeq := match logic with
+| LogicFlavor.M => some p
+| LogicFlavor.I => some p
+| LogicFlavor.C => p ::ₘ seq
+
+def LogicFlavor.RSeq.r_erase {logic : LogicFlavor} (seq : logic.RSeq) (p : Proposition) : logic.RSeq := match logic with
+| LogicFlavor.M => if (Option.instDecidableEq seq (some p)).decide then none else seq
+| LogicFlavor.I => if (Option.instDecidableEq seq (some p)).decide then none else seq
+| LogicFlavor.C => seq.erase p
+
+def LogicFlavor.RSeq.r_multiple {logic : LogicFlavor} (seq : logic.RSeq) (p : Proposition) : Prop := match logic with
+| LogicFlavor.M => False
+| LogicFlavor.I => False
+| LogicFlavor.C => seq.count p > 1
+
+notation "[" p:10 "]ᵣ" => r_singleton p
+notation "[]ᵣ" => r_empty
+infixl:15 "::ᵣ" => r_concat
 
 inductive G1 : (logic : LogicFlavor) -> (@Sequent logic) -> Type
-| Ax (p : Proposition) : G1 logic ([p] => [p])
-| Lbot : G1 logic ([⊥'] => 0)
-| LW (p : Proposition) (prev : G1 logic (Γ => Δ)) : G1 logic (p ::ₘ Γ => Δ)
-| RW (p : Proposition) (prev : G1 logic (Γ => Δ)) : G1 logic (Γ => p ::ₘ Δ)
-| LC (p : Proposition) (prev : G1 logic (Γ => Δ))
-    {h : Γ.count p > 1} : G1 logic (Γ.erase p => Δ)
-| RC (p : Proposition) (prev : G1 logic (Γ => Δ))
-    {h : Δ.count p > 1} : G1 logic (Γ => Δ.erase p)
-| Lconjₗ (l r : Proposition) (prev : G1 logic (l ::ₘ Γ => Δ))
-  : G1 logic ((l ∧ r) ::ₘ Γ => Δ)
-| Lconjᵣ (l r : Proposition) (prev : G1 logic (r ::ₘ Γ => Δ))
-  : G1 logic ((l ∧ r) ::ₘ Γ => Δ)
-| Rconj (l r : Proposition)
-  (pl : G1 logic (Γ => l ::ₘ Δ)) (pr : G1 logic (Γ => r ::ₘ Δ))
-  : G1 logic (Γ => (l ∧ r) ::ₘ Δ)
+| Ax (p : Proposition) : G1 logic ([p] ⇒ [p]ᵣ)
+| Lbot : G1 logic ([⊥'] ⇒ []ᵣ)
+| LW (p : Proposition) (prev : G1 logic (Γ ⇒ Δ)) : G1 logic (p ::ₘ Γ ⇒ Δ)
+| RW (p : Proposition) (prev : G1 logic (Γ ⇒ Δ)) { cond: Δ.r_spacious } : G1 logic (Γ ⇒ p ::ᵣ Δ)
+| LC (p : Proposition) (prev : G1 logic (Γ ⇒ Δ))
+    {h : Γ.count p > 1} : G1 logic (Γ.erase p ⇒ Δ)
+| RC (p : Proposition) (prev : G1 logic (Γ ⇒ Δ))
+    {h : Δ.r_multiple p} : G1 logic (Γ ⇒ Δ.r_erase p)
+| Lconjₗ (l r : Proposition) (prev : G1 logic (l ::ₘ Γ ⇒ Δ))
+  : G1 logic ((l ∧ r) ::ₘ Γ ⇒ Δ)
+| Lconjᵣ (l r : Proposition) (prev : G1 logic (r ::ₘ Γ ⇒ Δ))
+  : G1 logic ((l ∧ r) ::ₘ Γ ⇒ Δ)
+| Rconj (l r : Proposition) { cond : Δ.r_spacious }
+  (pl : G1 logic (Γ ⇒ l ::ᵣ Δ)) (pr : G1 logic (Γ ⇒ r ::ᵣ Δ))
+  : G1 logic (Γ ⇒ (l ∧ r) ::ᵣ Δ)
 | Ldisj (l r : Proposition)
-  (pl : G1 logic (l ::ₘ Γ => Δ)) (pr : G1 logic (r ::ₘ Γ => Δ))
-  : G1 logic ((l ∨ r) ::ₘ Γ => Δ)
-| Rconjₗ (l r : Proposition) (prev : G1 logic (Γ => l ::ₘ Δ))
-  : G1 logic (Γ => (l ∨ r) ::ₘ Δ)
-| Rconjᵣ (l r : Proposition) (prev : G1 logic (Γ => r ::ₘ Δ))
-  : G1 logic (Γ => (l ∨ r) ::ₘ Δ)
-| Limp (l r : Proposition)
-  (pl : G1 logic (Γ => l ::ₘ Δ)) (pr : G1 logic (r ::ₘ Γ => Δ))
-  : G1 logic ((l → r) ::ₘ Γ => Δ)
-| Rimp (l r : Proposition) (prev : G1 logic (l ::ₘ Γ => r ::ₘ Δ))
-  : G1 logic (Γ => (l → r) ::ₘ Δ)
-| Lfa (x : ℕ) (y : Term) (p : Proposition) (prev : G1 logic (p[x//y] ::ₘ Γ => Δ)) : G1 logic ((∀'[x] p) ::ₘ Γ => Δ)
-| Rfa (x y : ℕ) (p : Proposition) (prev : G1 logic (Γ => p[x//y] ::ₘ Δ)) : G1 logic (Γ => (∀'[x] p) ::ₘ Δ)
-| Lex (x y : ℕ) (p : Proposition) (prev : G1 logic (p[x//y] ::ₘ Γ => Δ)) : G1 logic ((∃'[x] p) ::ₘ Γ => Δ)
-| Rex (x : ℕ) (y : Term) (p : Proposition) (prev : G1 logic (Γ => p[x//y] ::ₘ Δ)) : G1 logic (Γ => (∃'[x] p) ::ₘ Δ)
+  (pl : G1 logic (l ::ₘ Γ ⇒ Δ)) (pr : G1 logic (r ::ₘ Γ ⇒ Δ))
+  : G1 logic ((l ∨ r) ::ₘ Γ ⇒ Δ)
+| Rconjₗ (l r : Proposition) { cond : Δ.r_spacious }
+  (prev : G1 logic (Γ ⇒ l ::ᵣ Δ)) : G1 logic (Γ ⇒ (l ∨ r) ::ᵣ Δ)
+| Rconjᵣ (l r : Proposition) { cond : Δ.r_spacious }
+  (prev : G1 logic (Γ ⇒ r ::ᵣ Δ)) : G1 logic (Γ ⇒ (l ∨ r) ::ᵣ Δ)
+
+| Limp (l r : Proposition) -- Spacious condition is *NOT* required here, because for G1[mi], left branch drops all additional right propositions
+  (pl : G1 logic (Γ ⇒ l ::ᵣ Δ)) (pr : G1 logic (r ::ₘ Γ ⇒ Δ))
+  : G1 logic ((l → r) ::ₘ Γ ⇒ Δ)
+
+| Rimp (l r : Proposition) { cond : Δ.r_spacious } (prev : G1 logic (l ::ₘ Γ ⇒ r ::ᵣ Δ))
+  : G1 logic (Γ ⇒ (l → r) ::ᵣ Δ)
+| Lfa (x : ℕ) (y : Term) (p : Proposition) (prev : G1 logic (p[x//y] ::ₘ Γ ⇒ Δ)) : G1 logic ((∀'[x] p) ::ₘ Γ ⇒ Δ)
+| Rfa (x y : ℕ) (p : Proposition) { cond : Δ.r_spacious }
+  (prev : G1 logic (Γ ⇒ p[x//y] ::ᵣ Δ)) : G1 logic (Γ ⇒ (∀'[x] p) ::ᵣ Δ)
+| Lex (x y : ℕ) (p : Proposition) (prev : G1 logic (p[x//y] ::ₘ Γ ⇒ Δ)) : G1 logic ((∃'[x] p) ::ₘ Γ ⇒ Δ)
+| Rex (x : ℕ) (y : Term) (p : Proposition) { cond : Δ.r_spacious }
+  (prev : G1 logic (Γ ⇒ p[x//y] ::ᵣ Δ)) : G1 logic (Γ ⇒ (∃'[x] p) ::ᵣ Δ)
 
 end FOL
