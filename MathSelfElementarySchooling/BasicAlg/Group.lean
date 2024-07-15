@@ -1,6 +1,7 @@
 import Mathlib.Init.Function
-import Aesop
-open Classical
+import Mathlib.Data.Quot
+-- import Aesop
+-- open Classical
 
 universe u
 
@@ -16,7 +17,7 @@ class Group (G: Type u) where
 
   assoc: ∀ { a b c : G }, mul (mul a b) c = mul a (mul b c)
 
-infixl:100 "⬝" => Group.mul
+infixl:90 "⬝" => Group.mul
 postfix:100 "⁻¹" => Group.inv
 
 lemma double_inv {G: Type u} [Group G] { g: G } : (g⁻¹)⁻¹ = g := calc
@@ -61,6 +62,24 @@ lemma inv_dist {G: Type u} [Group G] ( g h : G )
       _ = ((g ⬝ h)⁻¹ ⬝ (g ⬝ h)) ⬝ (h⁻¹) ⬝ (g⁻¹) := by rw [← @Group.assoc]
       _ = Group.id ⬝ (h⁻¹) ⬝ (g⁻¹) := by rw [@Group.inv_l]
       _ = _ := by rw [@Group.id_abs_l]
+  }
+
+lemma Group.mul_flip_left {G : Type u} [Group G] { a b c : G }
+  : a ⬝ b = c -> b = a⁻¹ ⬝ c := by {
+    intros H
+    calc
+      b = a⁻¹ ⬝ a ⬝ b := by rw [Group.inv_l, Group.id_abs_l]
+      _ = a⁻¹ ⬝ (a ⬝ b) := by rw [Group.assoc]
+      _ = a⁻¹ ⬝ c := by rw [H]
+  }
+
+lemma Group.mul_flip_right {G : Type u} [Group G] { a b c : G }
+  : a ⬝ b = c -> a = c ⬝ (b⁻¹) := by {
+    intros H
+    calc
+      a = a ⬝ (b ⬝ (b⁻¹)) := by rw [Group.inv_r, Group.id_abs_r]
+      _ = a ⬝ b ⬝ (b⁻¹) := by rw [Group.assoc]
+      _ = c ⬝ (b⁻¹) := by rw [H]
   }
 
 structure Subgroup (G: Type u) [Group G] where
@@ -125,239 +144,102 @@ lemma normal_comm_r {G: Type u} [Group G] {N: NormalSubgroup G} ( g n: G )
     exact ⟨ n' , ⟨ H1, H2 ⟩ ⟩
   }
 
-@[ext]
-structure QuotientGroup {G: Type u} [Group G] (N: NormalSubgroup G) where
-  classes: G -> Prop
-  cong: ∀ { g n: G }, N.pred n -> classes g -> classes (g ⬝ n)
-  cong_inv: ∀ { g h: G }, classes g -> classes h -> N.pred (g⁻¹ ⬝ h)
-  inh: ∃ g, classes g
-
-def QuotientGroup.cong_symm {G: Type u} [Group G] {N: NormalSubgroup G} (self : QuotientGroup N) : ∀ { g n: G }, N.pred n -> self.classes g -> self.classes (n ⬝ g) := by {
-  intros g n Hn Hg
-  rcases (normal_comm_l g n Hn) with ⟨ n', Hn', Heq ⟩
-  rw [Heq]
-  exact self.cong Hn' Hg
-}
-
-def QuotientGroup.cong_inv_symm {G: Type u} [Group G] {N: NormalSubgroup G} (self : QuotientGroup N) : ∀ { g h: G }, self.classes g -> self.classes h -> N.pred (g ⬝ (h⁻¹)) := by {
-  intros g h Hg Hh
-  let Htmp := self.cong_inv Hg Hh
-  let n := g⁻¹ ⬝ h
-  let Heq1 : h = g ⬝ n := calc
-    h = g ⬝ ((g⁻¹) ⬝ h) := by rw [← Group.assoc, Group.inv_r, Group.id_abs_l]
-    _ = g ⬝ n := rfl
-  let Heq2 := calc
-    g ⬝ (h⁻¹) = g ⬝ ((g ⬝ n)⁻¹) := by rw [Heq1]
-    _ = g ⬝ (n⁻¹ ⬝ (g⁻¹)) := by rw [inv_dist]
-    _ = g ⬝ (n⁻¹ ) ⬝ (g⁻¹) := by rw [Group.assoc]
-  rw [Heq2]
-  apply N.conj_mem
-  apply N.inv_mem
-  exact Htmp
-}
-
-def quotient_proj {G: Type u} [Group G] (N: NormalSubgroup G) (g: G) : QuotientGroup N := {
-  classes := fun h => ∃ n, N.pred n ∧ g ⬝ n = h
-  cong := by {
-    simp
-    intros h n Hn
-    intros n₁ Hn₁ Heq₁
-    let Carrier := (subgroup_carrier N.toSubgroup)
-    let nc : Carrier := ⟨ n, Hn ⟩
-    let n₁c : Carrier := ⟨ n₁, Hn₁ ⟩
-    let n₂c : Carrier := n₁c ⬝ nc
-    constructor
-    constructor
-    · exact n₂c.snd
-    · rw [← Heq₁]
-      have Heq₂ : n₂c.fst = n₁ ⬝ n := by {
-        dsimp [n₂c]
-        simp [Group.mul]
-      }
-      rw [Heq₂]
-      rw [← @Group.assoc G]
-  }
-  cong_inv := by {
-    simp
-    intros a b n Hn Heq n' Hn' Heq'
-    rw [← Heq, inv_dist, ← Heq']
-    let Htmp := calc n⁻¹ ⬝ (g⁻¹) ⬝ (g ⬝ n')
-        = n⁻¹ ⬝ (g⁻¹ ⬝ (g ⬝ n')) := by rw [@Group.assoc]
-      _ = n⁻¹ ⬝ ((g⁻¹ ⬝ g) ⬝ n') := by rw [@Group.assoc]
-      _ = n⁻¹ ⬝ n' := by rw [Group.inv_l, Group.id_abs_l]
-    rw [Htmp]
-    exact N.mul_mem (N.inv_mem Hn) Hn'
-  }
-  inh := by {
-    simp
-    exact ⟨ g, Group.id, N.id_mem, Group.id_abs_r ⟩
-  }
-}
-
-def quotient_mul {G: Type u} [Group G] {N: NormalSubgroup G} (A B : QuotientGroup N) : QuotientGroup N := {
-  classes := fun h => ∃ a, A.classes a ∧ ∃ b, B.classes b ∧ a ⬝ b = h
-  cong := by {
-    simp
-    intros h n Hn a Ha b Hb Heq
-    constructor
-    constructor
-    · exact Ha
-
-    let b' := b ⬝ n
-    have Hb' : B.classes b' := QuotientGroup.cong _ Hn Hb
-    have Heq' : a ⬝ b' = h ⬝ n := by {
-      dsimp [b']
-      rw [← Group.assoc, Heq]
+instance NormalSubgroup.coset_congr {G: Type u} [Group G] (self: NormalSubgroup G) : Setoid G where
+  r g₁ g₂ := ∃ (h : G), self.pred h ∧ g₁ ⬝ h = g₂
+  iseqv := {
+    refl := fun g => ⟨ Group.id, ⟨ self.id_mem, Group.id_abs_r ⟩  ⟩
+    symm := by {
+      intros x y
+      rintro ⟨ h, Hmem, Heq ⟩
+      refine ⟨ h⁻¹, self.inv_mem Hmem, ?_ ⟩
+      apply Eq.symm
+      apply Group.mul_flip_right
+      assumption
     }
-    exact ⟨ b', ⟨ Hb', Heq' ⟩ ⟩
-  }
-  cong_inv := by {
-    simp
-    intros ab ab' a Ha b Hb Heq a' Ha' b' Hb' Heq'
-    rw [← Heq, ← Heq', inv_dist]
-    let Htmp := calc b⁻¹ ⬝ (a⁻¹) ⬝ (a' ⬝ b')
-        = b⁻¹ ⬝ (a⁻¹ ⬝ (a' ⬝ b')) := by rw [@Group.assoc]
-      _ = b⁻¹ ⬝ ((a⁻¹ ⬝ a') ⬝ b') := by rw [@Group.assoc]
-      _ = b⁻¹ ⬝ (a⁻¹ ⬝ a') ⬝ b' := by rw [← @Group.assoc]
-    rw [Htmp]
-    let Hn := A.cong_inv Ha Ha'
-    rcases (normal_comm_r (b⁻¹) (a⁻¹ ⬝ a') Hn) with ⟨ n₁, Hn₁, Heq₁ ⟩
-    rw [Heq₁, Group.assoc]
-    apply N.mul_mem Hn₁
-    exact B.cong_inv Hb Hb'
-  }
-  inh := by {
-    simp
-    rcases A.inh with ⟨ a, Ha ⟩
-    rcases B.inh with ⟨ b, Hb ⟩
-    exact ⟨ a ⬝ b, a, Ha, b, Hb, rfl ⟩
-  }
-}
-
-def quotient_inv {G: Type u} [Group G] {N: NormalSubgroup G} (A : QuotientGroup N) : QuotientGroup N := {
-  classes := fun h => ∃ a, A.classes a ∧ a ⬝ h = Group.id
-  cong := by {
-    simp
-    intros h n Hn a Ha Heq
-    let a' := n⁻¹ ⬝ a
-    have Ha' : A.classes a' := by {
-      let Haina : N.pred (a⁻¹ ⬝ (n⁻¹) ⬝ a) := by {
-        let Htmp : N.pred (a⁻¹ ⬝ (n⁻¹) ⬝ _) := N.conj_mem (N.inv_mem Hn)
-        rw [double_inv] at Htmp
-        exact Htmp
-      }
-
-      let Htmp := A.cong Haina Ha
-      have Htmp2 := calc
-        a ⬝ (a⁻¹ ⬝ (n⁻¹) ⬝ a) = a ⬝ (a⁻¹ ⬝ (n⁻¹)) ⬝ a := by rw [← @Group.assoc]
-        _ = n⁻¹ ⬝ a := by rw [← @Group.assoc, @Group.inv_r, @Group.id_abs_l]
-      rw [Htmp2] at Htmp
-      exact Htmp
+    trans := by {
+      intros x y z
+      rintro ⟨ h₁, Hmem₁, Heq₁ ⟩
+      rintro ⟨ h₂, Hmem₂, Heq₂ ⟩
+      refine ⟨ h₁ ⬝ h₂, self.mul_mem Hmem₁ Hmem₂, ?_ ⟩
+      rw [← Group.assoc, Heq₁, Heq₂]
     }
-    constructor
-    constructor
-    · exact Ha'
-    · exact calc
-        a' ⬝ (h ⬝ n) = n⁻¹ ⬝ a ⬝ h ⬝ n := by rw [← @Group.assoc]
-        _ = n⁻¹ ⬝ (a ⬝ h) ⬝ n := by rw [← @Group.assoc]
-        _ = Group.id := by rw [Heq, Group.id_abs_r, Group.inv_l]
   }
-  cong_inv := by {
-    simp
-    intros ai bi a Ha Hainv b Hb Hbinv
-    rw [inv_uniq_r _ _ Hainv, inv_uniq_r _ _ Hbinv, double_inv]
-    exact A.cong_inv_symm Ha Hb
-  }
-  inh := by {
-    simp
-    rcases A.inh with ⟨ a, Ha ⟩
-    exact ⟨ a⁻¹, a, Ha, Group.inv_r ⟩
-  }
-}
 
-instance {G: Type u} [Group G] {N: NormalSubgroup G} : Group (QuotientGroup N) where
-  id := quotient_proj N Group.id
-  mul := quotient_mul
-  inv := quotient_inv
+def QuotientGroup {G : Type u} [Group G] (N: NormalSubgroup G) := Quotient N.coset_congr
+def QuotientGroup.mk (G : Type u) [Group G] (N : NormalSubgroup G) := QuotientGroup N
+infixl:80 "/" => QuotientGroup.mk
+
+abbrev coset_modulo { G : Type u } [Group G] (g : G) (N : NormalSubgroup G) : G / N := Quotient.mk N.coset_congr g
+infixl:80 "%%" => coset_modulo
+theorem quotient_mul_functoriality { G : Type u } [Group G] {N : NormalSubgroup G}
+  (a₁ b₁ a₂ b₂ : G) (Ha : N.coset_congr.r a₁ a₂) (Hb : N.coset_congr.r b₁ b₂) : a₁ ⬝ b₁ %% N = a₂ ⬝ b₂ %% N
+  := by {
+    simp [Setoid.r] at Ha Hb
+    rcases Ha with ⟨ ha, Hha, Heqa ⟩
+    rcases Hb with ⟨ hb, Hhb, Heqb ⟩
+    rw [← Heqa, ← Heqb]
+    apply Quotient.sound
+    rcases normal_comm_l b₁ ha Hha with ⟨ ha', Hha', Heqa' ⟩
+    have Heq : a₁⬝b₁⬝(ha'⬝hb) = a₁⬝ha⬝(b₁⬝hb) := calc
+      _ = a₁ ⬝ (b₁ ⬝ ha' ⬝ hb) := by repeat rw [Group.assoc]
+      _ = a₁ ⬝ (ha ⬝ b₁ ⬝ hb) := by rw [Heqa']
+      _ = _ := by repeat rw [Group.assoc]
+    exact ⟨ ha' ⬝ hb, N.mul_mem Hha' Hhb, Heq ⟩
+  }
+
+theorem quotient_inv_functoriality { G : Type u } [Group G] {N : NormalSubgroup G}
+  (a₁ a₂ : G) (Heq : N.coset_congr.r a₁ a₂) : a₁⁻¹ %% N = a₂⁻¹ %% N
+  := by {
+    simp [Setoid.r] at Heq
+    rcases Heq with ⟨ h, Hh, Heq ⟩
+    apply Quotient.sound
+    rw [← Heq, inv_dist]
+    rcases normal_comm_l (a₁⁻¹) (h⁻¹) (N.inv_mem Hh) with ⟨ h', Hh', Heq' ⟩
+    rw [Heq']
+    exact ⟨ h', Hh', rfl ⟩
+  }
+
+instance {G: Type u} [Group G] {N: NormalSubgroup G} : Group (G / N) where
+  id := Group.id %% N
+  mul := Quotient.lift₂ (fun (a b : G) => a ⬝ b %% N) quotient_mul_functoriality
+  inv := Quotient.lift (fun a => a⁻¹ %% N) quotient_inv_functoriality
 
   assoc := by {
-    intros A B C
-    ext g
-    unfold quotient_mul
-    simp
-    constructor
-    · intros h
-      rcases h with ⟨ h, ⟨ a, Ha, b, Hb, Heq1 ⟩, ⟨ c, Hc, Heq2 ⟩⟩
-      rw [← Heq1] at Heq2
-      rw [← Heq2]
-      exact ⟨ a, Ha, b ⬝ c, ⟨ b, Hb, c, Hc, rfl ⟩, Eq.symm Group.assoc ⟩
-    · intros h
-      rcases h with ⟨ a, Ha, h, ⟨ b, Hb, c, Hc, Heq1⟩, Heq2 ⟩
-      rw [← Heq2, ← Heq1]
-      exact ⟨ a ⬝ b, ⟨ a, Ha, b, Hb, rfl ⟩, ⟨ c, Hc, Group.assoc ⟩⟩
+    apply Quotient.ind₂
+    intros a b
+    apply Quotient.ind
+    intros c
+    repeat rw [@Quotient.lift₂_mk]
+    rw [Group.assoc]
   }
 
   id_abs_l := by {
-    intros A
-    ext g
-    simp [quotient_mul, quotient_proj]
-    constructor
-    · intros Ha
-      rcases Ha with ⟨ a, ⟨ n, Hn, Ha ⟩ , b, Hb, Heq ⟩
-      rw [@Group.id_abs_l] at Ha
-      rcases (normal_comm_l b n Hn) with ⟨ n', ⟨ Hl, Hr ⟩ ⟩
-      rw [← Heq, ← Ha, Hr]
-      exact A.cong Hl Hb
-    · intros Hg
-      exact ⟨ Group.id, ⟨ Group.id, ⟨ N.id_mem , Group.id_abs_l ⟩ ⟩, ⟨ g, ⟨ Hg, Group.id_abs_l ⟩  ⟩ ⟩
+    apply Quotient.ind
+    intros a
+    rw [@Quotient.lift₂_mk, Group.id_abs_l]
   }
-
   id_abs_r := by {
-    intros A
-    ext g
-    simp [quotient_mul, quotient_proj]
-    constructor
-    · intros Ha
-      rcases Ha with ⟨ a, Ha, b, ⟨ n, Hn, Hb ⟩ , Heq ⟩
-      rw [← Heq, ← Hb, Group.id_abs_l]
-      exact A.cong Hn Ha
-    · intros Hg
-      exact ⟨ g, Hg, Group.id, ⟨ Group.id, N.id_mem, Group.id_abs_l ⟩, Group.id_abs_r ⟩
+    apply Quotient.ind
+    intros a
+    rw [@Quotient.lift₂_mk, Group.id_abs_r]
   }
-
   inv_l := by {
-    intros A
-    ext g
-    simp [quotient_mul, quotient_inv, quotient_proj]
-    constructor
-    · rintro ⟨ h, ⟨ a, Ha, Hinv ⟩, b, Hb, Heq ⟩
-      rw [inv_uniq_r a h Hinv] at Heq
-      have Htmp : Group.id ⬝ (a⁻¹ ⬝ b) = g := by rw [Heq, Group.id_abs_l]
-      exact ⟨ a⁻¹ ⬝ b, QuotientGroup.cong_inv _ Ha Hb, Htmp ⟩
-    · rintro ⟨ n, Hn, Heq ⟩
-      rw [@Group.id_abs_l] at Heq
-      rw [Heq] at Hn
-      rcases A.inh with ⟨ a, Ha ⟩
-      let Htmp : a⁻¹⬝ (a ⬝ g) = g := by rw [← @Group.assoc, @Group.inv_l, @Group.id_abs_l]
-      exact ⟨ a⁻¹, ⟨ a, Ha, Group.inv_r ⟩, a ⬝ g, QuotientGroup.cong _ Hn Ha, Htmp ⟩
+    apply Quotient.ind
+    intros a
+    rw [@Quotient.lift_mk, @Quotient.lift₂_mk, Group.inv_l]
+  }
+  inv_r := by {
+    apply Quotient.ind
+    intros a
+    rw [@Quotient.lift_mk, @Quotient.lift₂_mk, Group.inv_r]
   }
 
-  inv_r := by {
-    intros A
-    ext g
-    simp [quotient_mul, quotient_inv, quotient_proj]
-    constructor
-    · rintro ⟨ a, Ha, h, ⟨ b, Hb, Hinv ⟩, Heq ⟩
-      rw [inv_uniq_r b h Hinv] at Heq
-      have Htmp : Group.id ⬝ (a ⬝ (b⁻¹)) = g := by rw [Heq, Group.id_abs_l]
-      exact ⟨ a ⬝ (b⁻¹), QuotientGroup.cong_inv_symm _ Ha Hb, Htmp ⟩
-    · rintro ⟨ n, Hn, Heq ⟩
-      rw [@Group.id_abs_l] at Heq
-      rw [Heq] at Hn
-      rcases A.inh with ⟨ a, Ha ⟩
-      let Htmp : g ⬝ a ⬝ (a⁻¹) = g := by rw [@Group.assoc, @Group.inv_r, @Group.id_abs_r]
-      exact ⟨ g ⬝ a, QuotientGroup.cong_symm _ Hn Ha, a⁻¹, ⟨ a, Ha, Group.inv_r ⟩, Htmp ⟩
-  }
+lemma quotient_mul_functoriality' { G : Type u } [Group G] {N : NormalSubgroup G}
+  (a b : G) : (a %% N) ⬝ (b %% N) = a ⬝ b %% N := by rfl
+
+lemma quotient_inv_functoriality' { G : Type u } [Group G] {N : NormalSubgroup G}
+  (a : G) : a⁻¹ %% N = a⁻¹ %% N := by rfl
+
 namespace Hom
 
 open Group
@@ -366,45 +248,110 @@ structure Hom (G H : Type u) [Group G] [Group H] where
   ap: G -> H
   hom_cond: ∀ { g h : G }, ap (g ⬝ h) = ((ap g) ⬝ (ap h))
 
-structure Iso (G H: Type u) [Group G] [Group H] extends Hom G H where
-  bij: Function.Bijective ap
+instance (G H : Type u) [Group G] [Group H] : CoeFun (Hom G H) (fun _ => G -> H) where
+  coe m := m.ap
+
+structure SurHom (G H: Type u) [Group G] [Group H] extends Hom G H where
+  sur: Function.Surjective ap
+
+structure InjHom (G H: Type u) [Group G] [Group H] extends Hom G H where
+  inj: Function.Injective ap
+
+structure Iso (G H: Type u) [Group G] [Group H] extends SurHom G H, InjHom G H
 
 def kernel_has {G H : Type u} [Group G] [H_s : Group H] (f: Hom G H)
-  := fun (g: G) => (f.ap g) = H_s.id
+  := fun (g: G) => (f g) = H_s.id
 
-lemma hom_id_to_id {G H : Type u} [Group G] [Group H] (f: Hom G H) : (f.ap id) = Group.id :=
-  calc f.ap id = (f.ap id) ⬝ id := by rw [@id_abs_r]
-  _ = (f.ap id) ⬝ ((f.ap id) ⬝ ((f.ap id)⁻¹)) := by rw [@inv_r]
-  _ = (f.ap id) ⬝ (f.ap id) ⬝ ((f.ap id)⁻¹) := by rw [← @assoc]
-  _ = (f.ap (id ⬝ id)) ⬝ ((f.ap id)⁻¹) := by rw [@Hom.hom_cond]
-  _ = (f.ap id) ⬝ ((f.ap id)⁻¹) := by rw [@id_abs_r]
+lemma Hom.hom_id {G H : Type u} [Group G] [Group H] (f: Hom G H) : (f id) = Group.id :=
+  calc f id = (f id) ⬝ id := by rw [@id_abs_r]
+  _ = (f id) ⬝ ((f id) ⬝ ((f id)⁻¹)) := by rw [@inv_r]
+  _ = (f id) ⬝ (f id) ⬝ ((f id)⁻¹) := by rw [← @assoc]
+  _ = (f (id ⬝ id)) ⬝ ((f id)⁻¹) := by rw [@Hom.hom_cond]
+  _ = (f id) ⬝ ((f id)⁻¹) := by rw [@id_abs_r]
   _ = Group.id := by rw [@inv_r]
 
-theorem kernel_has_id {G H : Type u} [Group G] [Group H] (f: Hom G H) : kernel_has f id := by {
+lemma Hom.hom_inv {G H : Type u} [Group G] [Group H] { f : Hom G H } (g : G)
+  : f (g⁻¹) = (f g)⁻¹ := by {
+    apply inv_uniq_l
+    rw [← f.hom_cond, Group.inv_l, Hom.hom_id]
+  }
+
+theorem Kernel.ker_id {G H : Type u} [Group G] [Group H] (f: Hom G H) : kernel_has f id := by {
   unfold kernel_has
-  exact hom_id_to_id f
+  exact Hom.hom_id f
 }
 
-theorem kernel_has_inv {G H : Type u} [Group G] [Group H] (f: Hom G H) : ∀ {g : G}, kernel_has f g -> kernel_has f (g⁻¹):= by {
+theorem Kernel.ker_inv {G H : Type u} [Group G] [Group H] (f: Hom G H) : ∀ {g : G}, kernel_has f g -> kernel_has f (g⁻¹):= by {
   unfold kernel_has
   intros g Hg
-  calc f.ap (g⁻¹) = Group.id ⬝ (f.ap (g⁻¹)) := by rw [id_abs_l]
-  _ = (f.ap g) ⬝ (f.ap (g⁻¹)) := by rw [Hg]
-  _ = f.ap (g ⬝ (g⁻¹)) := by rw [Hom.hom_cond]
-  _ = f.ap id := by rw [inv_r]
-  _ = Group.id := hom_id_to_id f
+  calc f (g⁻¹) = Group.id ⬝ (f (g⁻¹)) := by rw [id_abs_l]
+  _ = (f g) ⬝ (f (g⁻¹)) := by rw [Hg]
+  _ = f (g ⬝ (g⁻¹)) := by rw [Hom.hom_cond]
+  _ = f id := by rw [inv_r]
+  _ = Group.id := Hom.hom_id f
 }
 
-def kernel_subgroup {G H : Type u} [Group G] [Group H] (f: Hom G H) : Subgroup G :=
+def Kernel {G H : Type u} [Group G] [Group H] (f: Hom G H) : NormalSubgroup G :=
   {
     pred := kernel_has f
-    id_mem := kernel_has_id f
+    id_mem := Kernel.ker_id f
     mul_mem := by {
       unfold kernel_has
       intros _ _ Ha Hb
       rw [@Hom.hom_cond, Ha, Hb, id_abs_r]
     }
-    inv_mem := fun {g} a => kernel_has_inv f a
+    inv_mem := fun {g} a => Kernel.ker_inv f a
+    conj_mem := fun { h g } => by {
+      unfold kernel_has
+      simp
+      intros Hk
+      rw [Hom.hom_cond, Hom.hom_cond, Hk, Group.id_abs_r, ← Hom.hom_cond, Group.inv_r, Kernel.ker_id]
+    }
   }
+
+theorem injective_hom { G H : Type u } [Group G] [Group H] (f : InjHom G H) : ∀ (g : G), kernel_has f.toHom g <-> g = Group.id := by {
+  intros g
+  constructor
+  · unfold kernel_has
+    rw [← Kernel.ker_id f.toHom]
+    intros Heq
+    exact f.inj Heq
+  · intros Heq
+    rw [Heq]
+    exact Kernel.ker_id f.toHom
+}
+
+lemma kernel_congr { G H : Type u } [Group G] [Group H] { f : Hom G H }
+  (g₁ g₂ : G) : (Kernel f).coset_congr.r g₁ g₂ -> f g₁ = f g₂ := by {
+    simp [Setoid.r, Kernel, kernel_has]
+    intros k Hkid Heq
+    rw [← Heq, Hom.hom_cond, Hkid, Group.id_abs_r]
+  }
+
+def surjective_hom_iso_quot { G H : Type u } [Group G] [Group H] (f : SurHom G H) : Iso (G / (Kernel f.toHom)) H := {
+  ap := Quotient.lift f.ap kernel_congr
+  hom_cond := by {
+    apply Quotient.ind₂
+    simp
+    intros a b
+    rw [quotient_mul_functoriality', @Quotient.lift_mk]
+    exact f.hom_cond
+  }
+  sur := by {
+    unfold Function.Surjective; simp; intros b
+    rcases (f.sur b) with ⟨ h, Hh ⟩
+    exact ⟨ h %% (Kernel f.toHom), Hh ⟩
+  }
+  inj := by {
+    unfold Function.Injective; simp
+    apply Quotient.ind₂; simp; intros a b Heq
+    apply Quotient.sound
+    simp [HasEquiv.Equiv, Setoid.r]
+    refine ⟨ a⁻¹ ⬝ b, ?_ ,?_ ⟩
+    · simp [Kernel, kernel_has]
+      rw [Hom.hom_cond, Hom.hom_inv, Heq, inv_l]
+    · rw [← assoc, inv_r, id_abs_l]
+  }
+}
 
 end Hom
