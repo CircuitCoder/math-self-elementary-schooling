@@ -22,15 +22,25 @@ def Term.fresh (t : Term) : ℕ := match t with
 
 notation p:60 "[" var:10 "//" t:10 "]ₜ" => Term.subst p var t
 
+-- Atomic proposition (but not bottom)
+structure Atomic where
+  mk ::
+  pred : ℕ
+  terms : List Term
+deriving DecidableEq
+
 inductive Proposition : Type
 | bot
-| pred (pred : ℕ) (terms : List Term)
+| atom (a : Atomic)
 | disj (l : Proposition) (r : Proposition)
 | conj (l : Proposition) (r : Proposition)
 | imp (l : Proposition) (r : Proposition)
 | fa (v : ℕ) (bounded : Proposition)
 | ex (v : ℕ) (bounded : Proposition)
 deriving DecidableEq
+
+instance Atomic.coe : Coe Atomic Proposition where
+  coe := Proposition.atom
 
 notation "⊥'" => Proposition.bot
 infixl:30 "∨" => Proposition.disj
@@ -44,7 +54,7 @@ prefix:50 "¬" => neg
 
 def Proposition.subst (p : Proposition) (x : ℕ) (y : Term) := match p with
 | bot => bot
-| pred p t => pred p (t.map (fun (t : Term) => t[x//y]ₜ))
+| atom (Atomic.mk p t) => atom (Atomic.mk p (t.map (fun (t : Term) => t[x//y]ₜ)))
 | disj l r => disj (l.subst x y) (r.subst x y)
 | conj l r => conj (l.subst x y) (r.subst x y)
 | imp l r => imp (l.subst x y) (r.subst x y)
@@ -52,6 +62,16 @@ def Proposition.subst (p : Proposition) (x : ℕ) (y : Term) := match p with
 | ex v bounded => if v == x then ex v bounded else ex v (bounded.subst x y)
 
 notation p:60 "[" var:10 "//" t:10 "]" => Proposition.subst p var t
+
+theorem Proposition.subst_eq (p : Proposition) (x y : ℕ)
+  : x = y -> p = p [x // y] := by {
+    intros x
+    sorry
+    -- induction p
+  }
+
+lemma Proposition.subst_id (p : Proposition) (x : ℕ)
+  : p = p [x // x] := Proposition.subst_eq p x x rfl
 
 /- Sequent, G1/2/3,C/I/M proofs -/
 
@@ -112,7 +132,8 @@ notation "[]ᵣ" => r_empty
 infixl:15 "::ᵣ" => r_concat
 
 inductive G1 : (logic : LogicFlavor) -> (@Sequent logic) -> Type
-| Ax (p : Proposition) : G1 logic ([p] ⇒ [p]ᵣ)
+| Ax (p : Atomic) : G1 logic ([(p : Proposition)] ⇒ [p]ᵣ)
+| Axbot : G1 logic ([⊥'] ⇒ [⊥']ᵣ)
 | Lbot : G1 logic ([⊥'] ⇒ []ᵣ)
 | LW (p : Proposition) (prev : G1 logic (Γ ⇒ Δ)) : G1 logic (p ::ₘ Γ ⇒ Δ)
 | RW (p : Proposition) (prev : G1 logic (Γ ⇒ Δ)) { cond: Δ.r_spacious } : G1 logic (Γ ⇒ p ::ᵣ Δ)
@@ -120,7 +141,7 @@ inductive G1 : (logic : LogicFlavor) -> (@Sequent logic) -> Type
     {h : Γ.count p > 1} : G1 logic (Γ.erase p ⇒ Δ)
 | RC (p : Proposition) (prev : G1 logic (Γ ⇒ Δ))
     {h : Δ.r_multiple p} : G1 logic (Γ ⇒ Δ.r_erase p)
-| Lconjₗ (l r : Proposition) (prev : G1 logic (l ::ₘ Γ ⇒ Δ))
+| Lconjₗ {l r : Proposition} (prev : G1 logic (l ::ₘ Γ ⇒ Δ))
   : G1 logic ((l ∧ r) ::ₘ Γ ⇒ Δ)
 | Lconjᵣ (l r : Proposition) (prev : G1 logic (r ::ₘ Γ ⇒ Δ))
   : G1 logic ((l ∧ r) ::ₘ Γ ⇒ Δ)
@@ -147,5 +168,21 @@ inductive G1 : (logic : LogicFlavor) -> (@Sequent logic) -> Type
 | Lex (x y : ℕ) (p : Proposition) (prev : G1 logic (p[x//y] ::ₘ Γ ⇒ Δ)) : G1 logic ((∃'[x] p) ::ₘ Γ ⇒ Δ)
 | Rex (x : ℕ) (y : Term) (p : Proposition) { cond : Δ.r_spacious }
   (prev : G1 logic (Γ ⇒ p[x//y] ::ᵣ Δ)) : G1 logic (Γ ⇒ (∃'[x] p) ::ᵣ Δ)
+
+def ax_any { logic : LogicFlavor } (p : Proposition) : G1 logic ([p] ⇒ [p]ᵣ) := match p with
+| ⊥' => G1.Axbot
+| Proposition.atom a => G1.Ax a
+| Proposition.conj l r => by {
+  let l_proof : G1 logic ([l] ⇒ [l]ᵣ) := ax_any l
+  let r_proof : G1 logic ([r] ⇒ [r]ᵣ) := ax_any r
+  let l_strenghtened : G1 logic ([l ∧ r] ⇒ [l]ᵣ) := sorry
+  let r_strenghtened : G1 logic ([l ∧ r] ⇒ [r]ᵣ) := sorry
+  -- TODO: add helper constructors for singletons
+  sorry
+}
+| Proposition.disj l r => sorry
+| Proposition.imp l r => sorry
+| Proposition.fa x p => sorry
+| Proposition.ex x p => sorry
 
 end FOL
