@@ -108,7 +108,7 @@ inductive LogicFlavor : Type
 def LogicFlavor.RSeq (l: LogicFlavor) : Type := match l with
 | M => Option Proposition
 | I => Option Proposition
-| C => Multiset Proposition
+| C => List Proposition
 
 def LogicFlavor.bot_constructor (l : LogicFlavor) : Prop := match l with
 | M => False
@@ -117,7 +117,7 @@ def LogicFlavor.bot_constructor (l : LogicFlavor) : Prop := match l with
 
 structure Sequent {l: LogicFlavor} where
   mk ::
-  left : Multiset Proposition
+  left : List Proposition
   right : l.RSeq
 
 infix:10 "⇒" => Sequent.mk
@@ -125,12 +125,12 @@ infix:10 "⇒" => Sequent.mk
 def r_empty {logic : LogicFlavor} : logic.RSeq := match logic with
 | LogicFlavor.M => none
 | LogicFlavor.I => none
-| LogicFlavor.C => (0 : Multiset Proposition)
+| LogicFlavor.C => []
 
 def r_singleton {logic : LogicFlavor} (p : Proposition) : logic.RSeq := match logic with
 | LogicFlavor.M => some p
 | LogicFlavor.I => some p
-| LogicFlavor.C => ([p] : Multiset Proposition)
+| LogicFlavor.C => [p]
 
 def LogicFlavor.RSeq.r_spacious {logic : LogicFlavor} (seq : logic.RSeq) : Prop := match logic with
 | LogicFlavor.M => seq = none
@@ -145,7 +145,7 @@ theorem r_empty_spacious { logic : LogicFlavor } : (@r_empty logic).r_spacious :
 def r_concat {logic : LogicFlavor} (p : Proposition) (seq : logic.RSeq) : logic.RSeq := match logic with
 | LogicFlavor.M => some p
 | LogicFlavor.I => some p
-| LogicFlavor.C => p ::ₘ seq
+| LogicFlavor.C => p :: seq
 
 def LogicFlavor.RSeq.r_erase {logic : LogicFlavor} (seq : logic.RSeq) (p : Proposition) : logic.RSeq := match logic with
 | LogicFlavor.M => if (Option.instDecidableEq seq (some p)).decide then none else seq
@@ -167,8 +167,15 @@ theorem r_concat_empty_singleton { logic : LogicFlavor } { p : Proposition }
 | LogicFlavor.I => by simp [r_concat, r_singleton]
 | LogicFlavor.C => by simp [r_concat, r_singleton]; rfl
 
-theorem l_concat_empty_singleton { p : Proposition }
-  : (p ::ₘ {}) = [p] := by rfl
+def LogicFlavor.RPerm { logic : LogicFlavor } (a b : logic.RSeq) : Prop := match logic with
+| LogicFlavor.M => (Eq a b)
+| LogicFlavor.I => (Eq a b)
+| LogicFlavor.C => (List.Perm a b)
+
+def LogicFlavor.RPerm.rfl { logic : LogicFlavor } { a : logic.RSeq } : logic.RPerm a a := match logic with
+| LogicFlavor.M => Eq.refl _
+| LogicFlavor.I => Eq.refl _
+| LogicFlavor.C => List.Perm.rfl
 
 /- Proof systems -/
 
@@ -176,63 +183,64 @@ instance { logic : LogicFlavor } : Coe Proposition (@Sequent logic) where
   coe p := {} ⇒ [p]ᵣ
 
 inductive G1 : (logic : LogicFlavor) -> (@Sequent logic) -> Type
+| Reorder (pred : G1 logic (Γ ⇒ Δ)) (lperm : List.Perm Γ Γ') (rperm : logic.RPerm Δ Δ') : G1 logic (Γ' ⇒ Δ')
 | Ax (p : Atomic) : G1 logic ([(p : Proposition)] ⇒ [p]ᵣ)
 | Axbot : G1 logic ([⊥'] ⇒ [⊥']ᵣ)
 | Lbot : G1 logic ([⊥'] ⇒ []ᵣ)
-| LW (p : Proposition) (prev : G1 logic (Γ ⇒ Δ)) : G1 logic (p ::ₘ Γ ⇒ Δ)
+| LW (p : Proposition) (prev : G1 logic (Γ ⇒ Δ)) : G1 logic (p :: Γ ⇒ Δ)
 | RW (p : Proposition) (prev : G1 logic (Γ ⇒ Δ)) { cond: Δ.r_spacious } : G1 logic (Γ ⇒ p ::ᵣ Δ)
 | LC (p : Proposition) (prev : G1 logic (Γ ⇒ Δ))
     {h : Γ.count p > 1} : G1 logic (Γ.erase p ⇒ Δ)
 | RC (p : Proposition) (prev : G1 logic (Γ ⇒ Δ))
     {h : Δ.r_multiple p} : G1 logic (Γ ⇒ Δ.r_erase p)
-| Lconjₗ {l r : Proposition} (prev : G1 logic (l ::ₘ Γ ⇒ Δ))
-  : G1 logic ((l ∧ r) ::ₘ Γ ⇒ Δ)
-| Lconjᵣ {l r : Proposition} (prev : G1 logic (r ::ₘ Γ ⇒ Δ))
-  : G1 logic ((l ∧ r) ::ₘ Γ ⇒ Δ)
+| Lconjₗ {l r : Proposition} (prev : G1 logic (l :: Γ ⇒ Δ))
+  : G1 logic ((l ∧ r) :: Γ ⇒ Δ)
+| Lconjᵣ {l r : Proposition} (prev : G1 logic (r :: Γ ⇒ Δ))
+  : G1 logic ((l ∧ r) :: Γ ⇒ Δ)
 | Rconj {l r : Proposition} { cond : Δ.r_spacious }
   (pl : G1 logic (Γ ⇒ l ::ᵣ Δ)) (pr : G1 logic (Γ ⇒ r ::ᵣ Δ))
   : G1 logic (Γ ⇒ (l ∧ r) ::ᵣ Δ)
 | Ldisj {l r : Proposition}
-  (pl : G1 logic (l ::ₘ Γ ⇒ Δ)) (pr : G1 logic (r ::ₘ Γ ⇒ Δ))
-  : G1 logic ((l ∨ r) ::ₘ Γ ⇒ Δ)
+  (pl : G1 logic (l :: Γ ⇒ Δ)) (pr : G1 logic (r :: Γ ⇒ Δ))
+  : G1 logic ((l ∨ r) :: Γ ⇒ Δ)
 | Rdisjₗ {l r : Proposition} { cond : Δ.r_spacious }
   (prev : G1 logic (Γ ⇒ l ::ᵣ Δ)) : G1 logic (Γ ⇒ (l ∨ r) ::ᵣ Δ)
 | Rdisjᵣ {l r : Proposition} { cond : Δ.r_spacious }
   (prev : G1 logic (Γ ⇒ r ::ᵣ Δ)) : G1 logic (Γ ⇒ (l ∨ r) ::ᵣ Δ)
 
 | Limp {l r : Proposition} -- Spacious condition is *NOT* required here, because for G1[mi], left branch drops all additional right propositions
-  (pl : G1 logic (Γ ⇒ l ::ᵣ Δ)) (pr : G1 logic (r ::ₘ Γ ⇒ Δ))
-  : G1 logic ((l → r) ::ₘ Γ ⇒ Δ)
+  (pl : G1 logic (Γ ⇒ l ::ᵣ Δ)) (pr : G1 logic (r :: Γ ⇒ Δ))
+  : G1 logic ((l → r) :: Γ ⇒ Δ)
 
-| Rimp {l r : Proposition} { cond : Δ.r_spacious } (prev : G1 logic (l ::ₘ Γ ⇒ r ::ᵣ Δ))
+| Rimp {l r : Proposition} { cond : Δ.r_spacious } (prev : G1 logic (l :: Γ ⇒ r ::ᵣ Δ))
   : G1 logic (Γ ⇒ (l → r) ::ᵣ Δ)
-| Lfa (x : ℕ) (y : Term) (p : Proposition) (prev : G1 logic (p[x//y] ::ₘ Γ ⇒ Δ)) : G1 logic ((∀'[x] p) ::ₘ Γ ⇒ Δ)
+| Lfa (x : ℕ) (y : Term) (p : Proposition) (prev : G1 logic (p[x//y] :: Γ ⇒ Δ)) : G1 logic ((∀'[x] p) :: Γ ⇒ Δ)
 | Rfa (x y : ℕ) (p : Proposition) { cond : Δ.r_spacious }
   (prev : G1 logic (Γ ⇒ p[x//y] ::ᵣ Δ)) : G1 logic (Γ ⇒ (∀'[x] p) ::ᵣ Δ)
-| Lex (x y : ℕ) (p : Proposition) (prev : G1 logic (p[x//y] ::ₘ Γ ⇒ Δ)) : G1 logic ((∃'[x] p) ::ₘ Γ ⇒ Δ)
+| Lex (x y : ℕ) (p : Proposition) (prev : G1 logic (p[x//y] :: Γ ⇒ Δ)) : G1 logic ((∃'[x] p) :: Γ ⇒ Δ)
 | Rex (x : ℕ) (y : Term) (p : Proposition) { cond : Δ.r_spacious }
   (prev : G1 logic (Γ ⇒ p[x//y] ::ᵣ Δ)) : G1 logic (Γ ⇒ (∃'[x] p) ::ᵣ Δ)
 
-def G1.ax_any' { logic : LogicFlavor } (p : Proposition) : G1 logic (p ::ₘ {} ⇒ p ::ᵣ []ᵣ) := match p with
-| ⊥' => l_concat_empty_singleton ▸ r_concat_empty_singleton ▸ G1.Axbot
-| Proposition.atom a => l_concat_empty_singleton ▸ r_concat_empty_singleton ▸ G1.Ax a
+def G1.ax_any' { logic : LogicFlavor } (p : Proposition) : G1 logic (p :: {} ⇒ p ::ᵣ []ᵣ) := match p with
+| ⊥' => r_concat_empty_singleton ▸ G1.Axbot
+| Proposition.atom a => r_concat_empty_singleton ▸ G1.Ax a
 | Proposition.conj l r => by {
-  let l_proof : G1 logic (l ::ₘ {} ⇒ l ::ᵣ []ᵣ) := ax_any' l
-  let r_proof : G1 logic (r ::ₘ {} ⇒ r ::ᵣ []ᵣ) := ax_any' r
-  let l_str : G1 logic ((l ∧ r) ::ₘ {} ⇒ l ::ᵣ []ᵣ) := G1.Lconjₗ l_proof
-  let r_str : G1 logic ((l ∧ r) ::ₘ {} ⇒ r ::ᵣ []ᵣ) := G1.Lconjᵣ r_proof
+  let l_proof : G1 logic (l :: {} ⇒ l ::ᵣ []ᵣ) := ax_any' l
+  let r_proof : G1 logic (r :: {} ⇒ r ::ᵣ []ᵣ) := ax_any' r
+  let l_str : G1 logic ((l ∧ r) :: {} ⇒ l ::ᵣ []ᵣ) := G1.Lconjₗ l_proof
+  let r_str : G1 logic ((l ∧ r) :: {} ⇒ r ::ᵣ []ᵣ) := G1.Lconjᵣ r_proof
   exact @G1.Rconj _ _ _ _ _ r_empty_spacious l_str r_str
 }
 | Proposition.disj l r => by {
-  let l_proof : G1 logic (l ::ₘ {} ⇒ l ::ᵣ []ᵣ) := ax_any' l
-  let r_proof : G1 logic (r ::ₘ {} ⇒ r ::ᵣ []ᵣ) := ax_any' r
-  let l_str : G1 logic (l ::ₘ {} ⇒ l ∨ r ::ᵣ []ᵣ) := @G1.Rdisjₗ _ _ _ _ _ r_empty_spacious l_proof
-  let r_str : G1 logic (r ::ₘ {} ⇒ l ∨ r ::ᵣ []ᵣ) := @G1.Rdisjᵣ _ _ _ _ _ r_empty_spacious r_proof
+  let l_proof : G1 logic (l :: {} ⇒ l ::ᵣ []ᵣ) := ax_any' l
+  let r_proof : G1 logic (r :: {} ⇒ r ::ᵣ []ᵣ) := ax_any' r
+  let l_str : G1 logic (l :: {} ⇒ l ∨ r ::ᵣ []ᵣ) := @G1.Rdisjₗ _ _ _ _ _ r_empty_spacious l_proof
+  let r_str : G1 logic (r :: {} ⇒ l ∨ r ::ᵣ []ᵣ) := @G1.Rdisjᵣ _ _ _ _ _ r_empty_spacious r_proof
   exact G1.Ldisj l_str r_str
 }
 | Proposition.imp l r => by {
-  let l_proof : G1 logic ({l} ⇒ l ::ᵣ []ᵣ) := ax_any' l
-  let l_weak : G1 logic ({l} ⇒ l ::ᵣ r ::ᵣ []ᵣ) := by {
+  let l_proof : G1 logic ([l] ⇒ l ::ᵣ []ᵣ) := ax_any' l
+  let l_weak : G1 logic ([l] ⇒ l ::ᵣ r ::ᵣ []ᵣ) := by {
     simp [r_concat]
     exact match Heq : logic with
     | LogicFlavor.M => by {
@@ -250,33 +258,32 @@ def G1.ax_any' { logic : LogicFlavor } (p : Proposition) : G1 logic (p ::ₘ {} 
       })
       simp [r_singleton]; rw [Heq] at l_weak'; simp [r_concat, r_empty] at l_weak'
 
-      let l_swap : (l ::ₘ {r}) = (r ::ₘ l ::ₘ {}) := by {
-        rw [Multiset.cons_swap]
-        rfl
-      }
-      exact l_swap ▸ l_weak'
+      let l_perm := List.Perm.swap l r []
+      exact G1.Reorder l_weak' List.Perm.rfl (by {
+        simp [LogicFlavor.RPerm, r_empty]
+        exact l_perm
+      })
     }
   }
-  let r_proof : G1 logic (r ::ₘ {} ⇒ r ::ᵣ []ᵣ) := ax_any' r
-  let r_swap : l ::ₘ r ::ₘ ∅ = r ::ₘ {l} := by rw [Multiset.cons_swap]; rfl
-  let r_weak : G1 logic (r ::ₘ {l} ⇒ r ::ᵣ []ᵣ) := r_swap ▸ G1.LW l r_proof
-  let imp_proof : G1 logic ((l → r) ::ₘ {l} ⇒ r ::ᵣ []ᵣ) := G1.Limp l_weak r_weak
-  let imp_proof : G1 logic (l ::ₘ {l → r} ⇒ r ::ᵣ []ᵣ) := (Multiset.cons_swap _ _ _) ▸ imp_proof
+  let r_proof : G1 logic (r :: {} ⇒ r ::ᵣ []ᵣ) := ax_any' r
+  let r_perm : List.Perm [l, r] [r, l] := List.Perm.swap r l []
+  let r_weak : G1 logic (r :: {l} ⇒ r ::ᵣ []ᵣ) := G1.Reorder (G1.LW l r_proof) r_perm LogicFlavor.RPerm.rfl
+  let imp_proof : G1 logic (l :: {l → r} ⇒ r ::ᵣ []ᵣ) := G1.Reorder (G1.Limp l_weak r_weak) (List.Perm.swap _ _ []) (LogicFlavor.RPerm.rfl)
   exact @G1.Rimp _ _ _ _ _ r_empty_spacious imp_proof
 }
 | Proposition.fa x pb => by {
-  let p_proof : G1 logic (pb ::ₘ 0 ⇒ pb ::ᵣ []ᵣ) := r_concat_empty_singleton ▸ ax_any' pb
-  let p_proof' : G1 logic ((∀'[x] pb) ::ₘ 0 ⇒ pb ::ᵣ []ᵣ) := G1.Lfa x x _
+  let p_proof : G1 logic ([pb]  ⇒ pb ::ᵣ []ᵣ) := r_concat_empty_singleton ▸ ax_any' pb
+  let p_proof' : G1 logic ([∀'[x] pb] ⇒ pb ::ᵣ []ᵣ) := G1.Lfa x x _
     (Proposition.subst_eq _ _ _ rfl ▸ p_proof)
-  let p_proof'' : G1 logic ((∀'[x] pb) ::ₘ 0 ⇒ (∀'[x] pb) ::ᵣ []ᵣ) := @G1.Rfa _ _ _ x x _
+  let p_proof'' : G1 logic ([∀'[x] pb] ⇒ (∀'[x] pb) ::ᵣ []ᵣ) := @G1.Rfa _ _ _ x x _
     r_empty_spacious (Proposition.subst_eq _ _ _ rfl ▸ p_proof')
   exact r_concat_empty_singleton ▸ p_proof''
 }
 | Proposition.ex x pb => by {
-  let p_proof : G1 logic (pb ::ₘ 0 ⇒ pb ::ᵣ []ᵣ) := r_concat_empty_singleton ▸ ax_any' pb
-  let p_proof' : G1 logic ((∃'[x] pb) ::ₘ 0 ⇒ pb ::ᵣ []ᵣ) := G1.Lex x x _
+  let p_proof : G1 logic ([pb] ⇒ pb ::ᵣ []ᵣ) := r_concat_empty_singleton ▸ ax_any' pb
+  let p_proof' : G1 logic ((∃'[x] pb) :: [] ⇒ pb ::ᵣ []ᵣ) := G1.Lex x x _
     (Proposition.subst_eq _ _ _ rfl ▸ p_proof)
-  let p_proof'' : G1 logic ((∃'[x] pb) ::ₘ 0 ⇒ (∃'[x] pb) ::ᵣ []ᵣ) := @G1.Rex _ _ _ x x _
+  let p_proof'' : G1 logic ((∃'[x] pb) :: []⇒ (∃'[x] pb) ::ᵣ []ᵣ) := @G1.Rex _ _ _ x x _
     r_empty_spacious (Proposition.subst_eq _ _ _ rfl ▸ p_proof')
   exact r_concat_empty_singleton ▸ p_proof''
 }
