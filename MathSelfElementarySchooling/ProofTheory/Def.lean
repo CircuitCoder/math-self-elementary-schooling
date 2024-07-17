@@ -142,6 +142,14 @@ theorem r_empty_spacious { logic : LogicFlavor } : (@r_empty logic).r_spacious :
 | LogicFlavor.I => by simp [r_empty, LogicFlavor.RSeq.r_spacious]
 | LogicFlavor.C => by trivial
 
+theorem classic_any_spacious { logic : LogicFlavor } (Heq : logic = LogicFlavor.C) (xs : logic.RSeq) : xs.r_spacious := by {
+  simp [LogicFlavor.RSeq.r_spacious]
+  induction logic
+  · exact LogicFlavor.noConfusion Heq
+  · exact LogicFlavor.noConfusion Heq
+  · trivial
+}
+
 def r_concat {logic : LogicFlavor} (p : Proposition) (seq : logic.RSeq) : logic.RSeq := match logic with
 | LogicFlavor.M => some p
 | LogicFlavor.I => some p
@@ -291,15 +299,21 @@ def G1.ax_any' { logic : LogicFlavor } (p : Proposition) : G1 logic (p :: {} ⇒
 def G1.ax_any { logic : LogicFlavor } (p : Proposition) : G1 logic ([p] ⇒ [p]ᵣ) :=
   r_concat_empty_singleton ▸ G1.ax_any' p
 
-def G1.bot_any { logic : LogicFlavor } (r : logic.RSeq) : G1 logic ([⊥'] ⇒ r) := match Heq : logic, r with
+def G1.bot_any_c (r : List Proposition) : G1 LogicFlavor.C ([⊥'] ⇒ r) := match r with
+| [] => G1.Lbot
+| x :: xs => by {
+  let iH := G1.bot_any_c xs
+  exact @G1.RW _ _ _ x iH (classic_any_spacious (Eq.refl _) xs)
+}
+
+def G1.bot_any { logic : LogicFlavor } (r : logic.RSeq) : G1 logic ([⊥'] ⇒ r) := match logic, r with
 | LogicFlavor.M, none => G1.Lbot
 | LogicFlavor.I, none => G1.Lbot
 | LogicFlavor.M, some p => @G1.RW _ _ _ p G1.Lbot r_empty_spacious
 | LogicFlavor.I, some p => @G1.RW _ _ _ p G1.Lbot r_empty_spacious
-| LogicFlavor.C, _ => by {
-  simp [Heq, LogicFlavor.RSeq] at r
-  sorry
-  -- FIXME: This is no longer constructive! we cannot use multiset
+| LogicFlavor.C, r' => by {
+  simp [LogicFlavor.RSeq] at r'
+  exact G1.bot_any_c r'
 }
 
 abbrev G1m := G1 LogicFlavor.M
