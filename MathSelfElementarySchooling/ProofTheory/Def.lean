@@ -196,7 +196,7 @@ inductive G1 : (logic : LogicFlavor) -> (@Sequent logic) -> Type
 | Axbot : G1 logic ([⊥'] ⇒ [⊥']ᵣ)
 | Lbot : G1 logic ([⊥'] ⇒ []ᵣ)
 | LW (p : Proposition) (prev : G1 logic (Γ ⇒ Δ)) : G1 logic (p :: Γ ⇒ Δ)
-| RW (p : Proposition) (prev : G1 logic (Γ ⇒ Δ)) { cond: Δ.r_spacious } : G1 logic (Γ ⇒ p ::ᵣ Δ)
+| RW (p : Proposition) (cond: Δ.r_spacious) (prev : G1 logic (Γ ⇒ Δ)) : G1 logic (Γ ⇒ p ::ᵣ Δ)
 | LC (p : Proposition) (prev : G1 logic (Γ ⇒ Δ))
     {h : Γ.count p > 1} : G1 logic (Γ.erase p ⇒ Δ)
 | RC (p : Proposition) (prev : G1 logic (Γ ⇒ Δ))
@@ -205,28 +205,28 @@ inductive G1 : (logic : LogicFlavor) -> (@Sequent logic) -> Type
   : G1 logic ((l ∧ r) :: Γ ⇒ Δ)
 | Lconjᵣ {l r : Proposition} (prev : G1 logic (r :: Γ ⇒ Δ))
   : G1 logic ((l ∧ r) :: Γ ⇒ Δ)
-| Rconj {l r : Proposition} { cond : Δ.r_spacious }
+| Rconj {l r : Proposition} (cond : Δ.r_spacious)
   (pl : G1 logic (Γ ⇒ l ::ᵣ Δ)) (pr : G1 logic (Γ ⇒ r ::ᵣ Δ))
   : G1 logic (Γ ⇒ (l ∧ r) ::ᵣ Δ)
 | Ldisj {l r : Proposition}
   (pl : G1 logic (l :: Γ ⇒ Δ)) (pr : G1 logic (r :: Γ ⇒ Δ))
   : G1 logic ((l ∨ r) :: Γ ⇒ Δ)
-| Rdisjₗ {l r : Proposition} { cond : Δ.r_spacious }
+| Rdisjₗ {l r : Proposition} (cond : Δ.r_spacious)
   (prev : G1 logic (Γ ⇒ l ::ᵣ Δ)) : G1 logic (Γ ⇒ (l ∨ r) ::ᵣ Δ)
-| Rdisjᵣ {l r : Proposition} { cond : Δ.r_spacious }
+| Rdisjᵣ {l r : Proposition} (cond : Δ.r_spacious)
   (prev : G1 logic (Γ ⇒ r ::ᵣ Δ)) : G1 logic (Γ ⇒ (l ∨ r) ::ᵣ Δ)
 
 | Limp {l r : Proposition} -- Spacious condition is *NOT* required here, because for G1[mi], left branch drops all additional right propositions
   (pl : G1 logic (Γ ⇒ l ::ᵣ Δ)) (pr : G1 logic (r :: Γ ⇒ Δ))
   : G1 logic ((l → r) :: Γ ⇒ Δ)
 
-| Rimp {l r : Proposition} { cond : Δ.r_spacious } (prev : G1 logic (l :: Γ ⇒ r ::ᵣ Δ))
+| Rimp {l r : Proposition} (cond : Δ.r_spacious) (prev : G1 logic (l :: Γ ⇒ r ::ᵣ Δ))
   : G1 logic (Γ ⇒ (l → r) ::ᵣ Δ)
 | Lfa (x : ℕ) (y : Term) (p : Proposition) (prev : G1 logic (p[x//y] :: Γ ⇒ Δ)) : G1 logic ((∀'[x] p) :: Γ ⇒ Δ)
-| Rfa (x y : ℕ) (p : Proposition) { cond : Δ.r_spacious }
+| Rfa (x y : ℕ) (p : Proposition) (cond : Δ.r_spacious)
   (prev : G1 logic (Γ ⇒ p[x//y] ::ᵣ Δ)) : G1 logic (Γ ⇒ (∀'[x] p) ::ᵣ Δ)
 | Lex (x y : ℕ) (p : Proposition) (prev : G1 logic (p[x//y] :: Γ ⇒ Δ)) : G1 logic ((∃'[x] p) :: Γ ⇒ Δ)
-| Rex (x : ℕ) (y : Term) (p : Proposition) { cond : Δ.r_spacious }
+| Rex (x : ℕ) (y : Term) (p : Proposition) (cond : Δ.r_spacious)
   (prev : G1 logic (Γ ⇒ p[x//y] ::ᵣ Δ)) : G1 logic (Γ ⇒ (∃'[x] p) ::ᵣ Δ)
 
 def G1.ax_any' { logic : LogicFlavor } (p : Proposition) : G1 logic (p :: {} ⇒ p ::ᵣ []ᵣ) := match p with
@@ -260,10 +260,7 @@ def G1.ax_any' { logic : LogicFlavor } (p : Proposition) : G1 logic (p :: {} ⇒
       exact l_proof
     }
     | LogicFlavor.C => by {
-      let l_weak' := @G1.RW logic _ _ r l_proof (by {
-        simp [LogicFlavor.RSeq.r_spacious]
-        rw [Heq]; simp
-      })
+      let l_weak' := G1.RW r (classic_any_spacious Heq _) l_proof
       simp [r_singleton]; rw [Heq] at l_weak'; simp [r_concat, r_empty] at l_weak'
 
       let l_perm := List.Perm.swap l r []
@@ -303,14 +300,14 @@ def G1.bot_any_c (r : List Proposition) : G1 LogicFlavor.C ([⊥'] ⇒ r) := mat
 | [] => G1.Lbot
 | x :: xs => by {
   let iH := G1.bot_any_c xs
-  exact @G1.RW _ _ _ x iH (classic_any_spacious (Eq.refl _) xs)
+  exact G1.RW x (classic_any_spacious (Eq.refl _) xs) iH
 }
 
 def G1.bot_any { logic : LogicFlavor } (r : logic.RSeq) : G1 logic ([⊥'] ⇒ r) := match logic, r with
 | LogicFlavor.M, none => G1.Lbot
 | LogicFlavor.I, none => G1.Lbot
-| LogicFlavor.M, some p => @G1.RW _ _ _ p G1.Lbot r_empty_spacious
-| LogicFlavor.I, some p => @G1.RW _ _ _ p G1.Lbot r_empty_spacious
+| LogicFlavor.M, some p => G1.RW p r_empty_spacious G1.Lbot
+| LogicFlavor.I, some p => G1.RW p r_empty_spacious G1.Lbot
 | LogicFlavor.C, r' => by {
   simp [LogicFlavor.RSeq] at r'
   exact G1.bot_any_c r'
@@ -324,11 +321,16 @@ namespace G1.Examples
 
 def G1c_dne (p : Proposition) : G1c (¬¬p → p) := by {
   let P1 : G1c ({p} ⇒ [p]ᵣ) := G1.ax_any _
-  let P1 : G1c ({p} ⇒ ⊥' ::ᵣ [p]ᵣ) := @G1.RW _ _ _ _ P1 (by simp [LogicFlavor.RSeq.r_spacious])
+  let P1 : G1c ({p} ⇒ ⊥' ::ᵣ [p]ᵣ) := G1.RW _ ?_ P1
   let P1 : G1c ({} ⇒ ¬p ::ᵣ [p]ᵣ) := @G1.Rimp _ _ _ _ _ (by simp [LogicFlavor.RSeq.r_spacious]) P1
   let P2 : G1c ({⊥'} ⇒ [p]ᵣ) := G1.bot_any _
   let P : G1c ({¬¬p} ⇒ [p]ᵣ) := G1.Limp P1 P2
   exact @G1.Rimp _ _ _ _ _ r_empty_spacious (r_concat_empty_singleton ▸ P)
+}
+
+def G1i_tne (p : Proposition) : G1i (¬¬¬p → ¬p) := by {
+  let P : G1i ([p, ¬¬¬p ] ⇒ ⊥' ::ᵣ []ᵣ) := sorry
+  exact G1.Rimp r_empty_spacious (G1.Rimp r_empty_spacious P)
 }
 
 end G1.Examples
